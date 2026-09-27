@@ -1,7 +1,8 @@
-# env files hold secrets: only the .example is committed
-docker/.env
-docker/*.env
-!docker/.env.example
+# env files hold secrets, anywhere in the repo: only .env.example is committed
+.env
+.env.*
+*.env
+!.env.example
 
 # python
 .venv/
