@@ -9,8 +9,8 @@ and builds on ideas from [Kev](https://github.com/jaredpalmer/kev). It speaks th
 TypeSafe and Kev clients work by changing `base_url`.
 
 > **Status: pre-release (v0.1.0.dev).** The whole platform is built and tested: model, API, plugins, backend, UI, Docker
-> and CI. **Trained checkpoints and benchmark numbers are not published yet.** Until they are, every speed or accuracy
-> figure here is a target, and an untrained server gives meaningless answers.
+> and CI. Dragonfly-S has been trained and measured (below). Dragonfly-M is built and tested but not yet trained, and
+> checkpoints are not published yet.
 
 ## What it does
 
@@ -41,6 +41,29 @@ TypeSafe and Kev clients work by changing `base_url`.
 | `noul` | a calibrated yes/no probability |
 | `score` | the expected level on an ordered scale, with a probability per level |
 
+## First results (Dragonfly-S, measured)
+
+**Setup:**
+- Dragonfly-S: ModernBERT-base, 150M parameters.
+- Trained 3 epochs (6 minutes) on Kev's decision-v2 suite.
+- Measured on its 1,440 held-out test questions and an RTX 3090 Ti.
+
+| Metric | Result |
+|---|---|
+| Accuracy | 67.7% (noul 79.0%, choice 64.8%, score 52.5%) |
+| Calibration error (ECE, lower is better) | 0.038 |
+| Share automatable at 5% error | 35.6% |
+| Option-order flip rate | 13.4% (tier S sees option order; tier M is order-invariant by construction) |
+| Latency, 1 client, 3-question request | 14.1 ms p50 end to end (8.5 ms model) |
+| Throughput, 32 clients | 153 requests/s (460 questions/s) |
+
+**Context:**
+- This is a small first model. Kev-4B reports 85.6% in-distribution with a 4B model.
+- Dragonfly-M (Qwen3 + LoRA) is the tier meant to close that gap. It is not trained yet.
+- **Latency is still above the 5 ms target.** The benchmark vs LLM APIs has not been run yet; it needs an API key.
+
+Reproduce: `dragonfly-train` / `dragonfly-calibrate`, then `bench/latency.py` (see below).
+
 ## Models
 
 | Tier | Model | Role |
@@ -59,9 +82,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 1. **One forward pass, no generation:** every option is scored in parallel.
 2. **Many questions per request:** they share one pass instead of one LLM call each.
 3. **Cascade:** the small tier S answers most questions; only unsure ones pay for tier M.
-4. **Local serving, dynamic batching, answer cache, optional `torch.compile`.**
+4. **CUDA graphs:** the tier S forward pass replays as one GPU launch instead of about 680 (30 → 8.5 ms measured).
+5. **Local serving, dynamic batching, answer cache, optional `torch.compile`.**
 
-**Target:** about 5 ms per request on an RTX 3090 Ti. That is about 200× faster than an LLM that writes reasoning plus
+**Target:** about 5 ms per request on an RTX 3090 Ti (measured today: 14 ms; see above). That is about 200× faster than an LLM that writes reasoning plus
 JSON (1 s or more), and about 20–50× faster than an LLM constrained to output only the answer.
 
 `bench/compare_llm.py` measures **both** comparisons on the same data against any OpenAI-compatible API, so you can

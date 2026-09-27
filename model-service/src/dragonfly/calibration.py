@@ -46,10 +46,13 @@ def auto_rate(confidence: list[float], correct: list[bool], error_budget: float 
     return best / max(len(confidence), 1)
 
 
+PAD = -1e4  # finite on purpose: -inf padding turns the temperature gradient into -inf * 0 = NaN
+
+
 def pad_logits(logits: list[torch.Tensor]) -> torch.Tensor:
-    """Questions have different option counts; pad to (N, K_max) with -inf so softmax ignores the padding."""
+    """Questions have different option counts; pad to (N, K_max) with a large negative value so softmax ignores it."""
     k = max(len(x) for x in logits)
-    out = torch.full((len(logits), k), float("-inf"))
+    out = torch.full((len(logits), k), PAD)
     for i, x in enumerate(logits):
         out[i, : len(x)] = x
     return out
@@ -69,4 +72,7 @@ def fit_temperature(logits: list[torch.Tensor], labels: list[int]) -> float:
         return loss
 
     opt.step(closure)
-    return float(log_t.detach().exp().clamp(0.05, 20.0))
+    t = float(log_t.detach().exp().clamp(0.05, 20.0))
+    if not math.isfinite(t):
+        raise ValueError("temperature fit did not converge (non-finite result)")
+    return t

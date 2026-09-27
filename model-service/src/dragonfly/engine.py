@@ -30,7 +30,7 @@ class CheckpointConfig:
     tier: str = "S"
     backbone: str = "answerdotai/ModernBERT-base"
     head_dim: int = 256
-    max_length: int = 1024  # tier S: tokens per question row. tier M: tokens per question branch
+    max_length: int = 1536  # tier S: tokens per question row. tier M: tokens per question branch
     max_state: int = 2048  # tier M: state tokens kept
     lora_r: int = 16
     lora_alpha: float = 32
@@ -69,6 +69,14 @@ class Engine:
         self.tokenizer = tokenizer
         self.max_rows = max_rows  # questions per forward pass
         self.autocast = self.device == "cuda" and torch.cuda.is_bf16_supported()
+        self.graphs = None  # a GraphRunner once enable_cuda_graphs() is called
+
+    def enable_cuda_graphs(self) -> None:
+        """Replay the tier S forward pass as CUDA graphs (see models/graphs.py). Inference only; no-op off CUDA."""
+        if self.device == "cuda" and self.config.tier == "S":
+            from .models.graphs import GraphRunner
+
+            self.graphs = GraphRunner(self.model)
 
     # ---- persistence -------------------------------------------------------------------------------------------
     @classmethod
@@ -117,6 +125,10 @@ class Engine:
         """-> (questions, max options) raw logits; absent options are -inf."""
         batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
+            if self.graphs is not None and torch.is_inference_mode_enabled():
+                out = self.graphs(batch)
+                if out is not None:
+                    return out
             return self.model(**batch)
 
     def chunks(self, records: list[dict]) -> list[list[int]]:
@@ -154,7 +166,7 @@ class Engine:
     def describe(self) -> dict:
         c = self.config
         return {"tier": c.tier, "backbone": c.backbone, "trained": c.trained, "temperature": c.temperature,
-                "device": self.device}
+                "device": self.device, "cuda_graphs": self.graphs.stats() if self.graphs else None}
 
 
 class Cascade:

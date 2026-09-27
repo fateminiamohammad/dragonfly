@@ -23,6 +23,18 @@ All notable changes to this project. The plugin API (`dragonfly.plugins.api.API_
 - Out-of-process gRPC sidecar plugins in any language (`proto/dragonfly/plugin/v1/plugin.proto`), with a time budget
   and a fail-open or fail-closed policy per plugin.
 
+### Performance
+- CUDA graphs for tier S (`DRAGONFLY_CUDA_GRAPHS`, on by default on GPU). Inputs are padded to shape buckets. Measured
+  model time went from 30 to 8.5 ms per request on an RTX 3090 Ti; results match eager to 1.2e-5 in fp32.
+
+### Fixes found by training on real data
+- The temperature fit returned NaN when questions had different option counts (-inf padding). Now padded with a finite
+  value, with a guard and a regression test.
+- Banking77 questions with 77 described options exceed 1,024 tokens. The tier S default is now 1,536, and training
+  skips any question that still does not fit instead of crashing.
+- The model-service image needs a C compiler for Triton (ModernBERT on CUDA, `torch.compile`).
+- New `dragonfly-calibrate` command: re-fits the temperature of a saved checkpoint without retraining.
+
 ### Platform
 - Backend (NestJS, Postgres, Redis): accounts, API keys, usage, model info, playground.
 - UI (React): playground, API keys, usage, model and plugins.

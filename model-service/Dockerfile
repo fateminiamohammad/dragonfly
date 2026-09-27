@@ -10,6 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/models/hf
 WORKDIR /app
+# torch.compile / triton (used by ModernBERT on CUDA and by DRAGONFLY_COMPILE) needs a C compiler at runtime
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
 # torch first and alone: the biggest layer, and it changes least often
 RUN pip install torch --index-url ${TORCH_INDEX_URL}
 COPY pyproject.toml ./

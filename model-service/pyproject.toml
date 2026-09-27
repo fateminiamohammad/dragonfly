@@ -27,6 +27,7 @@ dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.6", "fakeredis>=2.20", "grpcio>=1.66
 dragonfly-serve = "dragonfly.api.serve:main"
 dragonfly-train = "dragonfly.training.train:main"
 dragonfly-eval = "dragonfly.training.evaluate:main"
+dragonfly-calibrate = "dragonfly.training.calibrate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

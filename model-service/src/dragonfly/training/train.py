@@ -39,6 +39,23 @@ def shuffle_options(q: dict, rng: random.Random) -> dict:
     return out
 
 
+def fitting(engine: Engine, rows: list[dict], states: list[str]) -> tuple[list[dict], list[str]]:
+    """Drop questions that cannot be encoded (e.g. options longer than --max-length) instead of failing mid-run."""
+    keep_rows, keep_states, dropped = [], [], 0
+    for q, s in zip(rows, states):
+        try:
+            engine.encode([{"state": s, "questions": [q]}])
+        except ValueError:
+            dropped += 1
+            continue
+        keep_rows.append(q)
+        keep_states.append(s)
+    if dropped:
+        log.warning("skipped %d of %d questions that do not fit in --max-length %d", dropped, len(rows),
+                    engine.config.max_length)
+    return keep_rows, keep_states
+
+
 def loss_fn(logits: torch.Tensor, rows: list[dict]) -> torch.Tensor:
     logp = torch.log_softmax(logits.float(), -1)
     losses = []
@@ -64,7 +81,7 @@ def train(args) -> dict:
         model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     engine = Engine(model, tokenizer, config, device)
 
-    rows, states = question_rows(load_records(args.train))
+    rows, states = fitting(engine, *question_rows(load_records(args.train)))
     log.info("tier %s: training on %d questions, device=%s", args.tier, len(rows), device)
     steps_per_epoch = math.ceil(len(rows) / args.batch_size)
     total = steps_per_epoch * args.epochs
@@ -100,7 +117,7 @@ def train(args) -> dict:
     model.eval()
 
     if args.calibration:
-        cal_rows, cal_states = question_rows(load_records(args.calibration))
+        cal_rows, cal_states = fitting(engine, *question_rows(load_records(args.calibration)))
         config.temperature = fit_temperature(collect_logits(engine, cal_rows, cal_states), [q["label"] for q in cal_rows])
         log.info("fitted temperature %.3f on %d questions", config.temperature, len(cal_rows))
     config.trained = True
@@ -126,7 +143,8 @@ def main() -> None:
     ap.add_argument("--backbone", default="answerdotai/ModernBERT-base",
                     help="S: an encoder such as answerdotai/ModernBERT-base; M: a decoder such as Qwen/Qwen3-1.7B-Base")
     ap.add_argument("--head-dim", type=int, default=256)
-    ap.add_argument("--max-length", type=int, default=1024)
+    ap.add_argument("--max-length", type=int, default=1536,
+                    help="S: tokens per question row; M: tokens per question branch")
     ap.add_argument("--lora-r", type=int, default=16)
     ap.add_argument("--grad-checkpointing", action="store_true", help="less GPU memory, ~30%% slower")
     ap.add_argument("--epochs", type=int, default=3)

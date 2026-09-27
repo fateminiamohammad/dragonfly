@@ -31,3 +31,16 @@ def test_fit_temperature_recovers_scale():
     labels = torch.distributions.Categorical(logits=true_logits).sample().tolist()
     overconfident = [row * 3 for row in true_logits]  # a model 3x too sharp
     assert fit_temperature(overconfident, labels) == pytest.approx(3, rel=0.1)
+
+
+def test_fit_temperature_with_different_option_counts():
+    """Regression: -inf padding made the fitted temperature NaN when questions had different option counts."""
+    torch.manual_seed(1)
+    logits, labels = [], []
+    for i in range(3000):
+        k = 2 + i % 7
+        z = torch.randn(k) * 2
+        labels.append(int(torch.distributions.Categorical(logits=z).sample()))
+        logits.append(z * 2.5)
+    t = fit_temperature(logits, labels)
+    assert t == pytest.approx(2.5, rel=0.1)
