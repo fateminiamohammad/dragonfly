@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dragonfly-plugin-redact-pii"
+version = "0.1.0"
+description = "Example Dragonfly plugin: masks emails, phone numbers and card numbers before the model reads the state."
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["dragonfly-model"]
+
+# This line is what makes it a plugin. Enable it with DRAGONFLY_PLUGINS=redact-pii.
+[project.entry-points."dragonfly.plugins"]
+redact-pii = "dragonfly_plugin_redact_pii:RedactPII"

@@ -1,0 +1,44 @@
+// Dragonfly out-of-process plugin protocol. Implement PluginService in any language, run it as a sidecar container,
+// and list it in DRAGONFLY_GRPC_PLUGINS=name@host:port. Payloads are JSON strings in the same shapes as the HTTP API
+// (the /v1/systemone request and response bodies), so no Dragonfly types need to be shared.
+syntax = "proto3";
+
+package dragonfly.plugin.v1;
+
+service PluginService {
+  // Called once at startup. Tells the host which hooks to call.
+  rpc Describe(DescribeRequest) returns (PluginInfo);
+  // Before the model. Return the (possibly rewritten) request, or reject it.
+  rpc OnRequest(HookRequest) returns (HookReply);
+  // After the model. Return the (possibly rewritten) response, or reject it.
+  rpc OnDecision(HookRequest) returns (HookReply);
+  // For each answer below DRAGONFLY_LOW_CONFIDENCE. Set replaced=true and answer_json to override the answer.
+  rpc OnLowConfidence(HookRequest) returns (HookReply);
+}
+
+message DescribeRequest {
+  string host_api_version = 1;
+}
+
+message PluginInfo {
+  string name = 1;
+  string version = 2;
+  string api_version = 3;             // plugin API version targeted, e.g. "1.0"
+  repeated string hooks = 4;          // any of: on_request, on_decision, on_low_confidence
+}
+
+message HookRequest {
+  string request_json = 1;            // the /v1/systemone request
+  string response_json = 2;           // OnDecision: the response body
+  string question_id = 3;             // OnLowConfidence: which answer
+  string answer_json = 4;             // OnLowConfidence: that answer
+}
+
+message HookReply {
+  string request_json = 1;            // OnRequest: the request to use (empty = unchanged)
+  string response_json = 2;           // OnDecision: the response to use (empty = unchanged)
+  string answer_json = 3;             // OnLowConfidence: the replacement answer
+  bool replaced = 4;                  // OnLowConfidence: true to use answer_json
+  int32 reject_status = 5;            // > 0 rejects the request with this HTTP status
+  string reject_message = 6;
+}

@@ -1,0 +1,61 @@
+# Edge proxy. Rendered by the nginx image at start (only ${APP_DOMAIN} is substituted).
+# /v1/  -> model-service (the hot path goes straight to the model; nothing else in between)
+# /api/ -> backend
+# /     -> ui
+
+resolver 127.0.0.11 valid=10s;
+
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+add_header X-Content-Type-Options nosniff always;
+add_header X-Frame-Options DENY always;
+add_header Referrer-Policy no-referrer always;
+
+server {
+    listen 80;
+    server_name ${APP_DOMAIN};
+
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${APP_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 4m;
+
+    location /v1/ {
+        set $model_upstream http://model-service:8000;
+        proxy_pass $model_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+
+    location = /health {
+        set $model_upstream http://model-service:8000;
+        proxy_pass $model_upstream;
+    }
+
+    location /api/ {
+        set $backend_upstream http://backend:3000;
+        proxy_pass $backend_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        set $ui_upstream http://ui:80;
+        proxy_pass $ui_upstream;
+    }
+}

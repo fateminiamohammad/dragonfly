@@ -1,0 +1,38 @@
+# env files hold secrets: only the .example is committed
+docker/.env
+docker/*.env
+!docker/.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# data and model artifacts (download / train locally, publish to the Hub)
+data/
+runs/
+*.pt
+*.safetensors
+*.onnx
+
+# node (backend, ui)
+node_modules/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+
+# build output and deploy backups
+dist/
+backups/
+*.tsbuildinfo

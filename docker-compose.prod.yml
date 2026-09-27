@@ -1,0 +1,150 @@
+# Production: prebuilt images only (never compiles on the host). nginx is the only public entry point.
+#   MODEL_IMAGE=ghcr.io/<owner>/dragonfly-model-service:<sha> BACKEND_IMAGE=... UI_IMAGE=... \
+#     docker compose -f docker-compose.prod.yml --env-file docker/.env up -d
+# Deploys with health checks and rollback: ops/deploy.sh. First TLS certificate: ops/init-letsencrypt.sh.
+name: dragonfly
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dragonfly-postgres
+    env_file: docker/${ENV_FILE_NAME:-.env}
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dragonfly-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  model-service:
+    image: ${MODEL_IMAGE:?set MODEL_IMAGE to ghcr.io/<owner>/dragonfly-model-service:<sha>}
+    container_name: dragonfly-model-service
+    env_file: docker/${ENV_FILE_NAME:-.env}
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+    expose: ["8000"]
+    volumes:
+      - ./runs:/runs:ro
+      - hfcache:/models/hf
+    <<: *gpu
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+
+  backend:
+    image: ${BACKEND_IMAGE:?set BACKEND_IMAGE to ghcr.io/<owner>/dragonfly-backend:<sha>}
+    container_name: dragonfly-backend
+    env_file: docker/${ENV_FILE_NAME:-.env}
+    environment:
+      DB_HOST: postgres
+      REDIS_URL: redis://redis:6379
+      MODEL_SERVICE_URL: http://model-service:8000
+    restart: unless-stopped
+    expose: ["3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    image: ${UI_IMAGE:?set UI_IMAGE to ghcr.io/<owner>/dragonfly-ui:<sha>}
+    container_name: dragonfly-ui
+    restart: unless-stopped
+    expose: ["80"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: dragonfly-nginx
+    restart: unless-stopped
+    env_file: docker/${ENV_FILE_NAME:-.env}
+    environment:
+      NGINX_ENVSUBST_FILTER: "^APP_DOMAIN$$"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbotwebroot:/var/www/certbot:ro
+    depends_on:
+      model-service: { condition: service_healthy }
+      backend: { condition: service_healthy }
+    command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"]
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: dragonfly-certbot
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbotwebroot:/var/www/certbot
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+
+  # Monitoring: docker compose --profile monitoring up -d  (Grafana on 127.0.0.1:3001, reach it over an SSH tunnel)
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.54.1
+    container_name: dragonfly-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:11.2.2
+    container_name: dragonfly-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - grafanadata:/var/lib/grafana
+
+volumes:
+  pgdata:
+  redisdata:
+  hfcache:
+  letsencrypt:
+  certbotwebroot:
+  promdata:
+  grafanadata:

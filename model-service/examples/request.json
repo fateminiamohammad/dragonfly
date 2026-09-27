@@ -1,0 +1,27 @@
+{
+  "state": {
+    "message": "I ordered a new card two weeks ago and it still hasn't arrived. This is really frustrating.",
+    "customer": {"plan": "premium", "account_age_days": 812}
+  },
+  "questions": {
+    "intent": {
+      "type": "choice",
+      "instructions": "Which banking intent best describes this customer message?",
+      "criteria": {
+        "card_arrival": "Customer asks where their card is",
+        "card_not_working": "Customer's card is declined or broken",
+        "refund_not_showing_up": "Customer is waiting for a refund",
+        "change_pin": null
+      }
+    },
+    "escalate": {
+      "type": "noul",
+      "instructions": "Should this be escalated to a human agent right away?"
+    },
+    "sentiment": {
+      "type": "score",
+      "instructions": "How does the customer feel?",
+      "criteria": ["very negative", "negative", "neutral", "positive", "very positive"]
+    }
+  }
+}

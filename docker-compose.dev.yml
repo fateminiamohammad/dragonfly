@@ -1,0 +1,110 @@
+# Shared dev server: production builds (runtime stages), restart on failure, one origin on :80.
+#   docker compose -f docker-compose.dev.yml --env-file docker/.env up -d --build
+name: dragonfly
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dragonfly-postgres
+    env_file: docker/.env
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: dragonfly-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  model-service:
+    build:
+      context: ./model-service
+      target: runtime
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+    container_name: dragonfly-model-service
+    env_file: docker/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+    expose: ["8000"]
+    volumes:
+      - ./runs:/runs:ro
+      - hfcache:/models/hf
+    <<: *gpu
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    container_name: dragonfly-backend
+    env_file: docker/.env
+    environment:
+      DB_HOST: postgres
+      REDIS_URL: redis://redis:6379
+      MODEL_SERVICE_URL: http://model-service:8000
+    restart: unless-stopped
+    expose: ["3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    build:
+      context: ./ui
+    container_name: dragonfly-ui
+    restart: unless-stopped
+    expose: ["80"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: dragonfly-nginx
+    restart: unless-stopped
+    ports:
+      - "${EDGE_PORT:-80}:80"
+    volumes:
+      - ./nginx/local/dragonfly.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend: { condition: service_healthy }
+      ui: { condition: service_started }
+
+volumes:
+  pgdata:
+  redisdata:
+  hfcache:
