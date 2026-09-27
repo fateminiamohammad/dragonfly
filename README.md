@@ -179,6 +179,18 @@ See [docs/PLUGINS.md](docs/PLUGINS.md), [plugins/example-python](plugins/example
 | `nginx/`, `ops/`, `docker/` | edge proxy, deploy/TLS/monitoring, environment template |
 | `docs/` | architecture, plugins, deployment |
 
+## Documentation
+
+| Doc | Covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | services, hot path, model design, cascade, calibration |
+| [docs/MODEL.md](docs/MODEL.md) | tiers, data, training and evaluation, metrics, results, speed |
+| [docs/API.md](docs/API.md) | `/v1` and `/api` endpoints, request and response shapes, errors |
+| [docs/PLUGINS.md](docs/PLUGINS.md) | in-process and gRPC plugins, closed-source delivery |
+| [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) | running locally, tests, Windows gotchas |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | production, TLS, deploys with rollback, monitoring |
+| [CLAUDE.md](CLAUDE.md) | project summary and working rules for AI assistants and contributors |
+
 ## Roadmap
 
 - [x] **M0** repository, Docker, CI
