@@ -46,6 +46,7 @@ services:
     env_file: docker/${ENV_FILE_NAME:-.env}
     environment:
       REDIS_URL: redis://redis:6379
+      PERCEPTION_URL: ${PERCEPTION_URL-http://perception-service:8001}
     restart: unless-stopped
     expose: ["8000"]
     volumes:
@@ -60,6 +61,22 @@ services:
       timeout: 5s
       retries: 5
       start_period: 180s
+
+  perception-service:
+    image: ${PERCEPTION_IMAGE:?set PERCEPTION_IMAGE to ghcr.io/<owner>/dragonfly-perception-service:<sha>}
+    container_name: dragonfly-perception
+    env_file: docker/${ENV_FILE_NAME:-.env}
+    restart: unless-stopped
+    expose: ["8001"]
+    volumes:
+      - hfcache:/models/hf
+    <<: *gpu
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
 
   backend:
     image: ${BACKEND_IMAGE:?set BACKEND_IMAGE to ghcr.io/<owner>/dragonfly-backend:<sha>}

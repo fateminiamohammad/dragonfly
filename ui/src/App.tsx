@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { api, getToken, setToken } from './api';
 import { Keys } from './pages/Keys';
 import { Login } from './pages/Login';
+import { Media } from './pages/Media';
 import { Model } from './pages/Model';
 import { Playground } from './pages/Playground';
 import { Usage } from './pages/Usage';
 
-const PAGES = { playground: 'Playground', keys: 'API keys', usage: 'Usage', model: 'Model & plugins' } as const;
+const PAGES = { playground: 'Playground', media: 'Media', keys: 'API keys', usage: 'Usage', model: 'Model & plugins' } as const;
 type Page = keyof typeof PAGES;
 
 function pageFromHash(): Page {
@@ -65,6 +66,7 @@ export function App() {
       </header>
       <main>
         {page === 'playground' && <Playground />}
+        {page === 'media' && <Media />}
         {page === 'keys' && <Keys />}
         {page === 'usage' && <Usage />}
         {page === 'model' && <Model />}

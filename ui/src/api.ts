@@ -60,7 +60,7 @@ export interface DecideResponse {
   answers: Record<string, Answer>;
   latency_ms: number;
   cached?: boolean;
-  usage: { input_tokens: number };
+  usage: { input_tokens: number; media_ms?: number };
 }
 
 export interface ApiKey {

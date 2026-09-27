@@ -69,3 +69,13 @@ def test_redis_keys_and_usage(engine):
     assert len(usage) == 1
     counts = asyncio.run(redis.hgetall(usage[0]))
     assert counts[b"requests"] == b"1" and counts[b"questions"] == b"2"
+
+
+def test_cache_control_no_cache_skips_lookup(engine):
+    worker = Worker(engine)
+    with TestClient(create_app(worker, cache=AnswerCache(10))) as c:
+        c.post("/v1/systemone", json=REQUEST)
+        fresh = c.post("/v1/systemone", json=REQUEST, headers={"cache-control": "no-cache"}).json()
+        cached = c.post("/v1/systemone", json=REQUEST).json()
+    assert not fresh["cached"] and cached["cached"]
+    assert worker.requests == 2

@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-from .models.decoder import DecoderDecider, apply_lora, lora_state_dict
+from .models.decoder import DecoderDecider, apply_lora, lora_state_dict, merge_lora
 from .models.encoder import EncoderDecider
 from .schema import question_confidence
 
@@ -70,17 +70,48 @@ class Engine:
         self.max_rows = max_rows  # questions per forward pass
         self.autocast = self.device == "cuda" and torch.cuda.is_bf16_supported()
         self.graphs = None  # a GraphRunner once enable_cuda_graphs() is called
+        self.state_cache = None  # a StateCache once enable_state_cache() is called (tier M)
+
+    def warmup(self) -> int:
+        """Capture the common CUDA-graph buckets now, so no request pays the one-off capture cost (a first request in a
+        new shape measured up to ~350 ms). Returns the number of graphs captured."""
+        if self.graphs is None:
+            return 0
+        from .models.graphs import DecoderGraphRunner
+
+        limit = getattr(self.model.backbone.config, "max_position_embeddings", 8192)
+        if isinstance(self.graphs, DecoderGraphRunner):
+            keys = [(r, t) for r in (1, 2, 4) for t in (64, 96, 128, 160, 192, 256, 320, 384, 512) if t <= limit]
+        else:
+            keys = [(r, t, o) for r in (1, 2, 4, 8) for t in (64, 128, 256, 512) for o in (2, 4, 8) if t <= limit]
+        with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
+            for key in keys:
+                if key not in self.graphs.graphs:
+                    self.graphs._capture(key)
+        return len(keys)
+
+    def enable_state_cache(self, size: int = 32, max_tokens: int = 65536, min_tokens: int = 512) -> None:
+        """Tier M: keep the KV cache of recently seen long states, so a repeated long document only pays for its
+        questions. States shorter than min_tokens take the batched path: measured on an RTX 3090 Ti, a short state gains
+        nothing from the cache (kernel launches dominate) and the per-record cached path gives up batching."""
+        if self.config.tier == "M" and size > 0:
+            from .models.decoder import StateCache
+
+            self.state_cache = StateCache(size, max_tokens)
+            self.state_cache_min_tokens = min_tokens
 
     def enable_cuda_graphs(self) -> None:
-        """Replay the tier S forward pass as CUDA graphs (see models/graphs.py). Inference only; no-op off CUDA."""
-        if self.device == "cuda" and self.config.tier == "S":
-            from .models.graphs import GraphRunner
+        """Replay the forward pass as CUDA graphs (see models/graphs.py). Inference only; no-op off CUDA."""
+        if self.device != "cuda":
+            return
+        from .models.graphs import DecoderGraphRunner, GraphRunner
 
-            self.graphs = GraphRunner(self.model)
+        self.graphs = GraphRunner(self.model) if self.config.tier == "S" else DecoderGraphRunner(self.model)
 
     # ---- persistence -------------------------------------------------------------------------------------------
     @classmethod
-    def load(cls, path: str, device: str | None = None) -> Engine:
+    def load(cls, path: str, device: str | None = None, merge: bool = True) -> Engine:
+        """merge=False keeps tier M's LoRA adapters separate (needed to continue training or to save them again)."""
         device = device or default_device()
         for prefix, tier in (("base:", "S"), ("base-m:", "M")):
             if path.startswith(prefix):
@@ -100,6 +131,8 @@ class Engine:
                                                      strict=False)
             if missing.unexpected_keys:
                 raise RuntimeError(f"lora.pt does not match {config.backbone}: {missing.unexpected_keys[:3]}")
+            if merge:
+                merge_lora(model.backbone)  # serving: fold adapters into the weights (identical output, less work)
         return cls(model, tokenizer, config, device)
 
     def save(self, path: str) -> None:
@@ -151,7 +184,19 @@ class Engine:
         input tokens per record; the tier that answered each question)."""
         out: list[list[list[float]]] = [[] for _ in records]
         tokens = [0] * len(records)
-        for idx in self.chunks(records):
+        batched = list(range(len(records)))
+        if self.state_cache is not None:
+            batched = []
+            for i, rec in enumerate(records):
+                if len(self.tokenizer(rec["state"], add_special_tokens=False).input_ids) < self.state_cache_min_tokens:
+                    batched.append(i)
+                    continue
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
+                    logits, tokens[i] = self.model.logits_cached(self.tokenizer, rec, self.state_cache)
+                p = torch.softmax(logits / self.config.temperature, dim=-1).cpu()
+                out[i] = [p[j, : len(q["options"])].tolist() for j, q in enumerate(rec["questions"])]
+        for sub in self.chunks([records[i] for i in batched]):
+            idx = [batched[i] for i in sub]
             chunk = [records[i] for i in idx]
             batch, n_tokens = self.encode(chunk)
             p = torch.softmax(self.logits(batch) / self.config.temperature, dim=-1).cpu()
@@ -166,7 +211,8 @@ class Engine:
     def describe(self) -> dict:
         c = self.config
         return {"tier": c.tier, "backbone": c.backbone, "trained": c.trained, "temperature": c.temperature,
-                "device": self.device, "cuda_graphs": self.graphs.stats() if self.graphs else None}
+                "device": self.device, "cuda_graphs": self.graphs.stats() if self.graphs else None,
+                "state_cache": self.state_cache.stats() if self.state_cache else None}
 
 
 class Cascade:

@@ -10,36 +10,43 @@ that builds on ideas from Kev. You send a document plus typed questions (`choice
 calibrated probabilities for every answer in **one forward pass**, with no text generation. That's why it answers in
 milliseconds instead of an LLM's seconds.
 
-It speaks the TypeSafe-compatible `POST /v1/systemone` API. It ships as Docker microservices (AI model / backend / UI)
-with an open plugin system, and plugins may be closed source.
+It speaks the TypeSafe-compatible `POST /v1/systemone` API. It ships as Docker microservices with an open plugin
+system, and plugins may be closed source:
+- AI model;
+- perception (images and audio → text);
+- backend;
+- UI.
+
+Every model in the request path is **non-autoregressive**: one forward pass, with no token-by-token generation.
 
 - **Repo:** https://github.com/fateminiamohammad/dragonfly (branch `main`)
 - **Images:** `ghcr.io/fateminiamohammad/dragonfly-*`
 
-## Current status (2026-09-27)
+## Current status (2026-09-28)
 
 | Area | State |
 |---|---|
-| Dragonfly-S (ModernBERT, speed tier) | **trained**: 67.7% accuracy, ECE 0.038 on decision-v2 test; serving from `runs/dragonfly-s` |
-| Dragonfly-M (Qwen3 + LoRA, quality tier) | built and tested (order-invariant by construction); **not trained yet** |
-| Latency (RTX 3090 Ti, CUDA graphs) | 14.1 ms p50 end to end, 8.5 ms model, for a 3-question request; target is 5 ms |
-| Cascade S→M, answer cache, batching | done |
-| Backend, UI, Redis-shared keys and usage | done, verified end to end |
-| Plugins (Python in-process + gRPC sidecars) | done; example `policy` sidecar running |
-| CI (GitHub Actions) and GHCR publishing | green |
-| Benchmark vs LLM APIs | script ready (`bench/compare_llm.py`); **not run**, needs an LLM API key |
+| Dragonfly-S (ModernBERT, speed tier) | trained and **distilled from M**: 68.2% accuracy, ECE 0.032; serving `runs/dragonfly-s-distilled` |
+| Dragonfly-M (Qwen3-1.7B + LoRA, quality tier) | trained: 76.9%, ECE 0.027, 0.86% order flips; serving `runs/dragonfly-m` (LoRA merged at load) |
+| Cascade S→M | threshold 0.45 (tuned on calibration): **76.6% test**, 35.5% of questions escalated |
+| Latency (RTX 3090 Ti, CUDA graphs on both tiers, warm-up at startup) | 3-question request: 14 ms (tier S only) / 31 ms (2 of 3 escalated) end to end |
+| vs local LLMs, same GPU (`bench/compare_llm.py`) | more accurate than all; 5.7× vs Qwen2.5-7B answer-only, 55× vs it reasoning, **105× vs thinking Qwen3-8B** |
+| Images and audio (perception-service) | done: CTC speech (en/fa), PP-OCR, SigLIP-2 tags; 22–39× faster than Qwen2.5-VL-7B, 7.8× faster than Whisper-turbo |
+| Backend, UI (Media page), keys and usage via Redis, plugins (Python + gRPC) | done, verified end to end (`scripts/e2e_media.py`) |
+| CI and GHCR publishing | green |
+| **200× vs GPT** | **not measured**: no hosted-API key. Local thinking LLM measured at 105×. |
 
 **Next steps:**
-1. Train tier M.
-2. Run the LLM comparison.
-3. Add a KV cache of the state for tier M.
-4. Add ONNX/TensorRT export for tier S.
-5. RLCD-style calibration training.
-6. Publish checkpoints to Hugging Face.
+1. Measure against a hosted frontier API (set `LLM_*`, run `bench/compare_llm.py`).
+2. Publish checkpoints (`scripts/publish_hf.py`, needs `huggingface-cli login`).
+3. Make the GHCR packages public and tag `v0.1.0`.
+4. Try TensorRT FP8 for tier S and a Qwen3-4B tier M.
+5. Test Persian ASR/OCR on real Persian media.
 
 ## Tech stack
 
-- **model-service:** Python 3.12, PyTorch, Transformers, FastAPI/uvicorn, Redis client, gRPC (`./model-service/`)
+- **model-service:** Python 3.12, PyTorch, Transformers, FastAPI/uvicorn, Redis client, httpx, gRPC (`./model-service/`)
+- **perception-service:** Python 3.12, PyTorch, Transformers (Parakeet/wav2vec2 CTC, SigLIP-2), RapidOCR, soundfile, ffmpeg (`./perception-service/`)
 - **backend:** NestJS 10, TypeORM, Postgres 16, ioredis, JWT (`./backend/`)
 - **ui:** React 18, Vite, TypeScript (`./ui/`)
 - **infra:** Docker Compose, nginx edge (TLS via certbot in prod), Redis 7, Prometheus/Grafana (prod profile)
@@ -50,6 +57,8 @@ with an open plugin system, and plugins may be closed source.
 |---|---|---|
 | nginx edge | **8080** | one origin: `/` → ui, `/api` → backend, `/v1` + `/health` → model-service |
 | model-service | 8000 | also direct; `/metrics` for Prometheus |
+| perception-service | 8001 (internal) | reached through model-service `/v1/perceive` or media in the state |
+| llm (Ollama) | 127.0.0.1:11434 | `llm` profile, only for benchmarks (qwen2.5:7b-instruct, qwen2.5vl:7b, qwen3:8b pulled) |
 | backend | 3000 (internal) | reached through nginx `/api` |
 | ui | 80 (internal) | reached through nginx `/` |
 | postgres | 5434 → 5432 | |
@@ -77,9 +86,12 @@ cd model-service && .venv/Scripts/python -m pytest -q && .venv/Scripts/python -m
 cd backend && npm run typecheck && npm run lint && npm test && npm run build
 cd ui && npm test && npm run build
 
-# benchmarks
+# benchmarks (Dragonfly requests bypass the answer cache)
 python bench/latency.py --url http://localhost:8000 --api-key <key> --concurrency 1
 python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50 --dragonfly http://localhost:8000
+python bench/compare_media.py --key <key> --llm-model qwen2.5vl:7b --whisper      # perception venv
+python scripts/tune_cascade.py --small runs/dragonfly-s-distilled --large runs/dragonfly-m --calibration ... --test ...
+python scripts/e2e_media.py --password <ADMIN_PASSWORD>                            # full media path through nginx
 ```
 
 ## Repository map
@@ -89,7 +101,9 @@ python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50 --dragonfl
 | `model-service/src/dragonfly/schema.py` | `/v1/systemone` request and response shapes; confidence formulas |
 | `model-service/src/dragonfly/models/encoder.py` | tier S (ModernBERT + pointer head) |
 | `model-service/src/dragonfly/models/decoder.py` | tier M (Qwen3 + LoRA, packing, attention mask) |
-| `model-service/src/dragonfly/models/graphs.py` | CUDA graphs for tier S |
+| `model-service/src/dragonfly/models/graphs.py` | CUDA graphs: `GraphRunner` (tier S), `DecoderGraphRunner` (tier M) |
+| `model-service/src/dragonfly/media.py` | media objects in the state → perception-service → text |
+| `perception-service/src/perception/` | `audio.py` (CTC ASR), `ocr.py` (PP-OCR, RTL reading order), `tags.py` (SigLIP-2), `api.py` |
 | `model-service/src/dragonfly/engine.py` | load/save checkpoints, `Engine.probs`, `Cascade` |
 | `model-service/src/dragonfly/batching.py`, `cache.py`, `auth.py` | model worker thread, answer cache, API keys and usage via Redis |
 | `model-service/src/dragonfly/api/` | FastAPI app (`app.py`) and entry point (`serve.py`, env config) |
@@ -99,7 +113,7 @@ python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50 --dragonfl
 | `ui/src/` | pages: Playground, Keys, Usage, Model; `api.ts`, `format.ts` |
 | `proto/dragonfly/plugin/v1/plugin.proto` | gRPC plugin protocol |
 | `plugins/example-python`, `plugins/example-grpc` | example plugins |
-| `bench/`, `scripts/` | benchmarks; `fetch_data.py`, `publish_hf.py` |
+| `bench/`, `scripts/` | benchmarks; `fetch_data.py`, `distill_targets.py`, `tune_cascade.py`, `e2e_media.py`, `publish_hf.py` |
 | `docker-compose.{local,dev,prod}.yml`, `docker/.env.example`, `nginx/`, `ops/` | deployment |
 | `data/`, `runs/` | datasets and checkpoints (gitignored) |
 
@@ -129,6 +143,11 @@ python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50 --dragonfl
 - **Run long GPU training through the Docker `trainer` services,** not from the session shell.
 - **`DRAGONFLY_API_KEYS` must include `MODEL_SERVICE_API_KEY`,** or the UI playground gets 401.
 - **An enabled gRPC plugin that's unreachable stops model-service startup.** That's deliberate: fail closed.
+- **The GPU is shared.** Serving (S + M + perception) and Ollama together fill most of 24 GB. Stop `dragonfly-llm`
+  before training, or training crawls on memory pressure (seen once: a trainer stuck at step 50).
+- **Use bf16, not fp16, for the perception models.** Parakeet-0.6B overflowed to NaN in fp16.
+- **Benchmarks must bypass the answer cache** (`Cache-Control: no-cache`, or unique states). An early run reported
+  3.4 ms that was actually cache hits.
 
 ## Documentation
 
@@ -136,6 +155,7 @@ python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50 --dragonfl
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): services, hot path, model design, cascade, calibration
 - [docs/MODEL.md](docs/MODEL.md): tiers, data, training/calibration/eval commands, metrics, results, speed
 - [docs/API.md](docs/API.md): `/v1` and `/api` endpoints, request and response shapes, errors, key and usage flow
+- [docs/PERCEPTION.md](docs/PERCEPTION.md): images and audio, models, API, limits, measured speed
 - [docs/PLUGINS.md](docs/PLUGINS.md): writing in-process and gRPC plugins, closed-source delivery
 - [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md): running with and without Docker, tests, Windows gotchas
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production server, TLS, deploys with rollback, monitoring, security

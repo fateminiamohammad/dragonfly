@@ -338,3 +338,55 @@ tr.revoked td {
   background: var(--accent);
   border-radius: 3px 3px 0 0;
 }
+
+h3 {
+  font-size: 14px;
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+label.button {
+  display: inline-block;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-weight: 400;
+}
+label.button:hover {
+  border-color: var(--muted);
+}
+.preview {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 12px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+audio.preview {
+  width: 100%;
+}
+.transcript {
+  font-size: 16px;
+  line-height: 1.6;
+  unicode-bidi: plaintext;
+}
+pre.ocr {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  unicode-bidi: plaintext;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}

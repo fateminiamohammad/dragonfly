@@ -6,11 +6,14 @@ Configuration is by environment (see docker/.env.example):
   DRAGONFLY_CHECKPOINT_M   optional second (tier M) checkpoint: enables the S -> M cascade
   DRAGONFLY_CASCADE_THRESHOLD  confidence below which S's answer is re-asked to M (default 0.8)
   DRAGONFLY_DEVICE         cuda | cpu (default: cuda when available)
-  DRAGONFLY_CUDA_GRAPHS    1 (default) = replay tier S as CUDA graphs on GPU: ~5x lower latency; 0 = off
+  DRAGONFLY_CUDA_GRAPHS    1 (default) = replay forward passes as CUDA graphs on GPU: ~4-5x lower latency; 0 = off
+  DRAGONFLY_WARMUP         1 (default) = capture common graph shapes at startup (no slow first requests)
+  DRAGONFLY_STATE_CACHE    tier M: documents whose KV cache is kept for reuse (default 32, 0 = off)
   DRAGONFLY_COMPILE        1 = torch.compile the backbones (slower start, faster steady state)
   DRAGONFLY_CACHE_SIZE     answers kept for repeated requests (default 4096, 0 = off)
   DRAGONFLY_API_KEYS       comma-separated bearer keys
   REDIS_URL                optional: API keys and usage shared with the backend
+  PERCEPTION_URL           optional: perception-service base URL; enables images and audio in the state
   DRAGONFLY_PLUGINS        comma-separated plugin names to load
   DRAGONFLY_MAX_BATCH      requests per forward pass (default 64)
   DRAGONFLY_HOST / DRAGONFLY_PORT   bind address (default 0.0.0.0:8000)
@@ -28,6 +31,7 @@ from ..auth import KeyStore
 from ..batching import Worker
 from ..cache import AnswerCache
 from ..engine import Cascade, Engine
+from ..media import MediaResolver
 from ..plugins import PluginHost
 from .app import create_app
 
@@ -38,6 +42,9 @@ def load_engine(path: str, device: str | None) -> Engine:
     engine = Engine.load(path, device)
     if os.environ.get("DRAGONFLY_CUDA_GRAPHS", "1") == "1":
         engine.enable_cuda_graphs()
+        if os.environ.get("DRAGONFLY_WARMUP", "1") == "1":
+            log.info("captured %d CUDA graphs at startup for %s", engine.warmup(), path)
+    engine.enable_state_cache(int(os.environ.get("DRAGONFLY_STATE_CACHE", "32")))
     if os.environ.get("DRAGONFLY_COMPILE") == "1":
         engine.model.backbone = torch.compile(engine.model.backbone, dynamic=True)
         log.info("torch.compile enabled for %s", path)
@@ -65,7 +72,8 @@ def build_app():
     if not keys.enabled:
         log.warning("no API keys configured: /v1 is OPEN (fine locally, never in production)")
     cache = AnswerCache(int(os.environ.get("DRAGONFLY_CACHE_SIZE", "4096")))
-    return create_app(worker, PluginHost.from_env(), keys=keys, cache=cache)
+    media = MediaResolver(os.environ["PERCEPTION_URL"]) if os.environ.get("PERCEPTION_URL") else None
+    return create_app(worker, PluginHost.from_env(), keys=keys, cache=cache, media=media)
 
 
 def main() -> None:

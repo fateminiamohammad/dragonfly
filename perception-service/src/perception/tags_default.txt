@@ -1,0 +1,236 @@
+# Default tag vocabulary for image descriptions (one tag per line; lines starting with # are ignored).
+# Replace it with your own domain's tags via PERCEPTION_TAGS_FILE. Tags are scored independently (several can apply).
+
+# documents and screens
+document
+invoice
+receipt
+contract
+letter
+form
+handwritten note
+signature
+identity card
+passport
+driver's license
+bank card
+check
+certificate
+business card
+table
+chart
+graph
+diagram
+map
+screenshot
+computer screen
+mobile phone screen
+error message
+website
+email
+spreadsheet
+presentation slide
+whiteboard
+book
+newspaper
+menu
+label
+barcode
+qr code
+price tag
+ticket
+medical report
+prescription
+x-ray image
+
+# people
+person
+man
+woman
+child
+baby
+group of people
+crowd
+face
+smiling person
+angry person
+sad person
+person holding a phone
+person at a desk
+worker
+doctor
+police officer
+customer
+selfie
+
+# vehicles and damage
+car
+truck
+bus
+motorcycle
+bicycle
+van
+tractor
+airplane
+boat
+train
+car accident
+damaged car
+dented car door
+broken bumper
+scratched paint
+cracked windshield
+flat tire
+license plate
+car interior
+dashboard warning light
+parking lot
+road
+traffic
+gas station
+
+# packages, products and retail
+package
+cardboard box
+damaged package
+open box
+torn packaging
+wet package
+envelope
+shopping bag
+product
+bottle
+can
+food packaging
+clothing
+shoes
+jewelry
+watch
+furniture
+sofa
+chair
+table furniture
+bed
+appliance
+refrigerator
+washing machine
+oven
+television
+laptop
+smartphone
+tablet
+keyboard
+headphones
+camera
+printer
+cable
+battery
+tool
+toy
+
+# food and drink
+food
+meal
+fruit
+vegetables
+bread
+meat
+dessert
+coffee
+drink
+restaurant
+kitchen
+spoiled food
+
+# places and scenes
+indoor
+outdoor
+office
+home
+living room
+bathroom
+bedroom
+hospital
+school
+shop
+warehouse
+factory
+construction site
+street
+building
+house
+apartment
+bridge
+farm
+garden
+park
+beach
+mountain
+forest
+desert
+river
+sea
+city
+village
+night
+sunset
+
+# conditions, safety and incidents
+fire
+smoke
+flood
+water leak
+water damage
+mold
+broken glass
+crack in wall
+damaged roof
+power outage
+electrical hazard
+spill
+trash
+graffiti
+weapon
+injury
+blood
+medicine
+ambulance
+fire truck
+police car
+emergency
+accident
+crowded place
+empty place
+
+# nature and animals
+animal
+dog
+cat
+bird
+horse
+cow
+sheep
+fish
+insect
+plant
+flower
+tree
+snow
+rain
+sky
+clouds
+
+# image quality
+blurry photo
+dark photo
+overexposed photo
+low resolution image
+photo of a screen
+photo of a printed page
+cropped image
+rotated image
+black and white photo
+drawing
+cartoon
+logo
+text

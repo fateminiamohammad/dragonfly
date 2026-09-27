@@ -51,6 +51,7 @@ services:
     env_file: docker/.env
     environment:
       REDIS_URL: redis://redis:6379
+      PERCEPTION_URL: ${PERCEPTION_URL-http://perception-service:8001}
     ports:
       - "${MODEL_SERVICE_PORT:-8000}:8000"
     volumes:
@@ -66,6 +67,26 @@ services:
       timeout: 5s
       retries: 10
       start_period: 180s
+
+  # images and audio -> text (non-autoregressive: CTC speech, PP-OCR, SigLIP-2 tags). Internal: reached via model-service.
+  perception-service:
+    build:
+      context: ./perception-service
+      target: dev
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+    container_name: dragonfly-perception
+    env_file: docker/.env
+    volumes:
+      - ./perception-service/src:/app/src
+      - hfcache:/models/hf
+    <<: *gpu
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 300s
 
   backend:
     build:
@@ -160,6 +181,18 @@ services:
     environment:
       MIN_CONFIDENCE: "0.5"
 
+  # A local LLM on the same GPU for the comparison (OpenAI-compatible API at http://llm:11434/v1):
+  #   docker compose ... --profile llm up -d llm && docker exec dragonfly-llm ollama pull qwen2.5:7b-instruct
+  llm:
+    profiles: [llm]
+    image: ollama/ollama:latest
+    container_name: dragonfly-llm
+    ports:
+      - "127.0.0.1:11434:11434"  # host benchmarks (bench/compare_media.py); loopback only
+    volumes:
+      - ollamadata:/root/.ollama
+    <<: *gpu
+
   # Dragonfly vs an LLM API (set LLM_BASE_URL / LLM_API_KEY / LLM_MODEL in docker/.env).
   bench:
     profiles: [bench]
@@ -176,6 +209,7 @@ services:
         --dragonfly http://model-service:8000 --out runs/compare-llm.json
 
 volumes:
+  ollamadata:
   pgdata:
   redisdata:
   hfcache:

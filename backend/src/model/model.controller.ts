@@ -24,6 +24,13 @@ export class ModelController {
     return callModel('/v1/models');
   }
 
+  /** Images/audio -> text (OCR, tags, transcript) through the model-service's /v1/perceive. */
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Post('perceive')
+  perceive(@Body() request: Record<string, unknown>) {
+    return callModel('/v1/perceive', { method: 'POST', body: JSON.stringify(request) });
+  }
+
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @Post('playground')
   playground(@Body() request: Record<string, unknown>) {

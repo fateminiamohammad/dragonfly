@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, type DecideResponse } from '../api';
 import { headline, pct, topOptions } from '../format';
+import { fileToBase64, mediaType } from './Media';
 
 const EXAMPLE = {
   state: {
@@ -33,6 +34,27 @@ export function Playground() {
   const [roundTrip, setRoundTrip] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  /** Put an image/audio file into the request's state as a media object; the server converts it to text. */
+  async function attach(file: File | undefined) {
+    if (!file) return;
+    const kind = mediaType(file);
+    if (!kind) {
+      setError('Attach an image or an audio file.');
+      return;
+    }
+    try {
+      const body = JSON.parse(text);
+      const state = typeof body.state === 'object' && body.state !== null && !Array.isArray(body.state) ? body.state : { text: body.state };
+      let n = 1;
+      while (`attachment_${n}` in state) n++;
+      state[`attachment_${n}`] = { type: kind, name: file.name, data: await fileToBase64(file) };
+      setText(JSON.stringify({ ...body, state }, null, 2));
+      setError('');
+    } catch (e) {
+      setError(`Fix the request JSON first: ${(e as Error).message}`);
+    }
+  }
 
   async function run() {
     setError('');
@@ -68,6 +90,10 @@ export function Playground() {
             {busy ? 'Deciding…' : 'Decide'}
           </button>
           <button onClick={() => setText(JSON.stringify(EXAMPLE, null, 2))}>Reset example</button>
+          <label className="button">
+            Attach image/audio
+            <input type="file" accept="image/*,audio/*" hidden onChange={(e) => attach(e.target.files?.[0])} />
+          </label>
         </div>
         {error && <p className="error">{error}</p>}
       </section>
@@ -77,7 +103,8 @@ export function Playground() {
           <h2>Answers</h2>
           {result && (
             <span className="muted small">
-              model {result.latency_ms.toFixed(1)} ms{result.cached ? ' (cached)' : ''} · round trip{' '}
+              model {result.latency_ms.toFixed(1)} ms{result.cached ? ' (cached)' : ''}
+              {result.usage.media_ms ? ` · media ${result.usage.media_ms.toFixed(0)} ms` : ''} · round trip{' '}
               {roundTrip?.toFixed(0)} ms · {result.usage.input_tokens} tokens
             </span>
           )}

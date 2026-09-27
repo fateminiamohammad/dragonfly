@@ -30,3 +30,14 @@ def test_graph_replay_matches_eager(engine):
     assert engine.graphs.stats()["replays"] == 1
     for a, b in zip(eager[0], graphed[0]):
         assert a == pytest.approx(b, abs=1e-5)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA GPU")
+def test_warmup_captures_buckets_before_requests(engine):
+    engine.model.cuda()
+    engine.device, engine.autocast = "cuda", False
+    engine.enable_cuda_graphs()
+    n = engine.warmup()  # the tiny test model has 128 positions: rows (1,2,4,8) x tokens (64,128) x options (2,4,8)
+    assert n == 24 and len(engine.graphs.graphs) == 24
+    engine.probs([{"state": "a good review", "questions": [{"instr": "is it good ?", "options": ["no", "yes"]}]}])
+    assert len(engine.graphs.graphs) == 24  # served by a pre-captured graph

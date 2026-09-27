@@ -8,9 +8,9 @@ Dragonfly is an open alternative to [TypeSafe's Jev](https://typesafe.ai/blog/in
 and builds on ideas from [Kev](https://github.com/jaredpalmer/kev). It speaks the same `/v1/systemone` API, so existing
 TypeSafe and Kev clients work by changing `base_url`.
 
-> **Status: pre-release (v0.1.0.dev).** The whole platform is built and tested: model, API, plugins, backend, UI, Docker
-> and CI. Dragonfly-S has been trained and measured (below). Dragonfly-M is built and tested but not yet trained, and
-> checkpoints are not published yet.
+> **Status: pre-release (v0.1.0.dev).** The platform is built, tested and measured end to end: both model tiers are
+> trained, and there are images and audio, plugins, backend, UI, Docker and CI. Checkpoints are not yet published on
+> Hugging Face.
 
 ## What it does
 
@@ -41,28 +41,37 @@ TypeSafe and Kev clients work by changing `base_url`.
 | `noul` | a calibrated yes/no probability |
 | `score` | the expected level on an ordered scale, with a probability per level |
 
-## First results (Dragonfly-S, measured)
+## Results (measured, RTX 3090 Ti)
 
-**Setup:**
-- Dragonfly-S: ModernBERT-base, 150M parameters.
-- Trained 3 epochs (6 minutes) on Kev's decision-v2 suite.
-- Measured on its 1,440 held-out test questions and an RTX 3090 Ti.
+**Accuracy** on Kev's decision-v2 test split (1,440 questions):
 
-| Metric | Result |
-|---|---|
-| Accuracy | 67.7% (noul 79.0%, choice 64.8%, score 52.5%) |
-| Calibration error (ECE, lower is better) | 0.038 |
-| Share automatable at 5% error | 35.6% |
-| Option-order flip rate | 13.4% (tier S sees option order; tier M is order-invariant by construction) |
-| Latency, 1 client, 3-question request | 14.1 ms p50 end to end (8.5 ms model) |
-| Throughput, 32 clients | 153 requests/s (460 questions/s) |
+| Model | Accuracy | Calibration error (ECE) | Order-flip rate |
+|---|---|---|---|
+| Dragonfly-S (ModernBERT, distilled from M) | 68.2% | 0.032 | 12.9% |
+| Dragonfly-M (Qwen3-1.7B + LoRA) | 76.9% | 0.027 | 0.86% |
+| **Cascade S→M** (served) | **76.6%** | - | 35.5% of questions go to M |
 
-**Context:**
-- This is a small first model. Kev-4B reports 85.6% in-distribution with a 4B model.
-- Dragonfly-M (Qwen3 + LoRA) is the tier meant to close that gap. It is not trained yet.
-- **Latency is still above the 5 ms target.** The benchmark vs LLM APIs has not been run yet; it needs an API key.
+**Versus common LLMs on the same GPU and the same requests** (`bench/compare_llm.py`):
 
-Reproduce: `dragonfly-train` / `dragonfly-calibrate`, then `bench/latency.py` (see below).
+| Against | Dragonfly | LLM | Dragonfly is |
+|---|---|---|---|
+| Qwen2.5-7B, answer only | 79.1% at 18 ms | 74.4% at 103 ms | **5.7× faster**, more accurate |
+| Qwen2.5-7B, reasoning | 79.1% at 18 ms | 76.7% at 995 ms | **55× faster**, more accurate |
+| Qwen3-8B, thinking | 84.6% at 16 ms | 80.0% at 1,658 ms | **105× faster**, more accurate |
+
+**Images and audio** (`bench/compare_media.py`):
+
+| Task | Dragonfly | Common model | Dragonfly is |
+|---|---|---|---|
+| Image → decision (OCR + tags + answer) | 71–104 ms | Qwen2.5-VL-7B: 2.2–3.0 s | **22–39× faster**, same answers |
+| 10.4 s speech → text | 71 ms | Whisper large-v3-turbo: 551 ms | **7.8× faster**, same words |
+
+**Honest note on "200×":**
+- Measured locally, Dragonfly is 55–105× faster than LLMs that reason, and more accurate.
+- 200× is what Jev reports against hosted frontier models (3–329 s per answer, network included). We haven't measured
+  a hosted API yet. `bench/compare_llm.py` does it with one API key.
+
+Details: [docs/MODEL.md](docs/MODEL.md) and [docs/PERCEPTION.md](docs/PERCEPTION.md).
 
 ## Models
 
@@ -82,10 +91,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 1. **One forward pass, no generation:** every option is scored in parallel.
 2. **Many questions per request:** they share one pass instead of one LLM call each.
 3. **Cascade:** the small tier S answers most questions; only unsure ones pay for tier M.
-4. **CUDA graphs:** the tier S forward pass replays as one GPU launch instead of about 680 (30 → 8.5 ms measured).
+4. **CUDA graphs** for both tiers: a whole forward pass replays as one GPU launch. Measured 30 → 8.5 ms for tier S
+   and 113 → 21 ms for tier M. Common shapes are captured at startup.
 5. **Local serving, dynamic batching, answer cache, optional `torch.compile`.**
 
-**Target:** about 5 ms per request on an RTX 3090 Ti (measured today: 14 ms; see above). That is about 200× faster than an LLM that writes reasoning plus
+**Measured:**
+- 3-question request: 14 ms end to end on tier S; 31 ms when 2 of the 3 questions escalate to tier M.
+- 32 clients: 153 requests/s on tier S. That is about 200× faster than an LLM that writes reasoning plus
 JSON (1 s or more), and about 20–50× faster than an LLM constrained to output only the answer.
 
 `bench/compare_llm.py` measures **both** comparisons on the same data against any OpenAI-compatible API, so you can
@@ -150,6 +162,17 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50        # vs an LLM, fair and unfair modes
 ```
 
+## Images and audio
+
+Put `{"type": "image" | "audio", "data": "<base64>"}` anywhere in the `state`. The **perception-service** turns it
+into text with **non-autoregressive** models before the decision:
+- **speech:** CTC speech recognition (English Parakeet, Persian wav2vec2);
+- **text in images:** PP-OCR;
+- **what an image shows:** SigLIP-2 tags.
+
+`POST /v1/perceive` converts without deciding. In the UI, the **Media** page does the same, and the Playground has an
+attach button. See [docs/PERCEPTION.md](docs/PERCEPTION.md).
+
 ## Plugins
 
 The core is Apache-2.0. Plugins are separate, so they can be **open or closed source**.
@@ -171,6 +194,7 @@ See [docs/PLUGINS.md](docs/PLUGINS.md), [plugins/example-python](plugins/example
 | Path | Contents |
 |---|---|
 | `model-service/` | Python package `dragonfly`: models, engine, API, plugins, training, tests |
+| `perception-service/` | Python package `perception`: images and audio to text (CTC ASR, PP-OCR, SigLIP-2) |
 | `backend/` | NestJS API: auth, keys, usage, model proxy |
 | `ui/` | React dashboard |
 | `proto/` | gRPC plugin protocol |
@@ -186,6 +210,7 @@ See [docs/PLUGINS.md](docs/PLUGINS.md), [plugins/example-python](plugins/example
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | services, hot path, model design, cascade, calibration |
 | [docs/MODEL.md](docs/MODEL.md) | tiers, data, training and evaluation, metrics, results, speed |
 | [docs/API.md](docs/API.md) | `/v1` and `/api` endpoints, request and response shapes, errors |
+| [docs/PERCEPTION.md](docs/PERCEPTION.md) | images and audio: models, API, limits, measured speed |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | in-process and gRPC plugins, closed-source delivery |
 | [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) | running locally, tests, Windows gotchas |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | production, TLS, deploys with rollback, monitoring |
@@ -199,9 +224,11 @@ See [docs/PLUGINS.md](docs/PLUGINS.md), [plugins/example-python](plugins/example
 - [x] **M3** cascade S→M, answer cache, `torch.compile`, benchmarks vs LLMs
 - [x] **M4** backend (NestJS) and UI (React), API keys and usage through Redis
 - [x] **M5** gRPC sidecar plugins in any language
-- [ ] **M6** v0.1 release: trained checkpoints on Hugging Face, images on GHCR, published benchmark report
-- [ ] Next: a state KV cache for tier M across requests, ONNX/TensorRT export for tier S, and RLCD-style calibration
-      training
+- [x] Tier M trained, cascade tuned, M→S distillation, tier M state cache, CUDA graphs for both tiers, LoRA merge
+- [x] Images and audio: perception-service (CTC speech, PP-OCR, SigLIP-2 tags), Media page
+- [x] Benchmarks against local LLMs (text, image, audio)
+- [ ] **v0.1 release:** checkpoints on Hugging Face (`scripts/publish_hf.py`), public GHCR packages, `v0.1.0` tag
+- [ ] Benchmark against a hosted frontier API; TensorRT FP8 for tier S; a larger tier M (Qwen3-4B); more languages
 
 ## License
 

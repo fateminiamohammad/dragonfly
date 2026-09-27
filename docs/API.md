@@ -62,6 +62,25 @@ TypeSafe-compatible: the TypeSafe and Kev SDKs work by pointing their base URL a
 | 4xx from a plugin | a plugin rejected the request, e.g. 413 for an oversized state |
 | 500 | a fail-closed plugin errored |
 
+### Images and audio in the state
+
+Any object `{"type": "image" | "audio", "data": "<base64>"}` inside `state` is converted to text before the decision:
+- images become OCR `text` plus the tags they show (`shows`);
+- audio becomes a `transcript`.
+
+Optional keys: `tasks` (`["ocr", "tags"]`), `ocr_lang` (`en` / `arabic`), `language` (`en` / `fa`). The response adds
+`usage.media_ms`. Details: [PERCEPTION.md](PERCEPTION.md).
+
+### `POST /v1/perceive`
+
+Converts up to 16 media items to text without deciding. Request: `{"items": [{"id", "type", "data", ...}]}`. The
+response gives `items[id]` with `ocr` / `tags` / `transcript`, plus `latency_ms` per stage.
+
+Status codes:
+- 404 if the server has no perception-service (`PERCEPTION_URL` unset);
+- 422 for bad media;
+- 503 if the perception-service is unreachable.
+
 ### Other model-service endpoints
 
 | Endpoint | Auth | Returns |
@@ -86,6 +105,7 @@ Every route except `/api/health` and `/api/auth/login` needs `Authorization: Bea
 | `GET /api/usage?days=30` | any | requests, questions and tokens per key per UTC day (1–90 days) |
 | `GET /api/model` | any | proxies `/v1/models` |
 | `POST /api/model/playground` | any, 120/min | proxies `/v1/systemone` with the internal key |
+| `POST /api/model/perceive` | any, 60/min | proxies `/v1/perceive` (images/audio → text); JSON bodies up to 30 MB |
 
 ## How keys and usage flow
 

@@ -13,7 +13,9 @@
    ├─ answer cache: repeated requests skip the GPU
    ├─ worker thread: dynamic batching, one forward pass per batch
    └─ engine: Dragonfly-S (encoder), Dragonfly-M (decoder + LoRA), or the S -> M cascade
- backend (NestJS, Postgres): accounts, API keys (-> Redis), usage (<- Redis), model info, playground
+   └─ media: images/audio in the state -> perception-service (one batched call) -> text, before plugins
+ perception-service (Python, GPU, internal): CTC speech->text, PP-OCR, SigLIP-2 tags; all one forward pass
+ backend (NestJS, Postgres): accounts, API keys (-> Redis), usage (<- Redis), model info, playground, media proxy
  ui (React): playground, keys, usage, model & plugins
  trainer (same image, profile: train) → checkpoints in ./runs
 ```
@@ -61,6 +63,12 @@ Train it with `dragonfly-train --tier M` or the `trainer-m` compose profile.
 S answers first. Questions whose calibrated confidence is below `DRAGONFLY_CASCADE_THRESHOLD` go to M, packed per
 request so M reads each state once. Each answer reports the `tier` that produced it. Questions M is still unsure about
 can go to `on_low_confidence` plugins.
+
+### Images and audio
+
+Dragonfly decides on text, so media is converted first by the **perception-service**. It uses only
+non-autoregressive models: CTC speech recognition, PP-OCR (detection + CTC recognition) and SigLIP-2 tags. Media
+objects in the `state` are replaced by their text before plugins and the model run. See [PERCEPTION.md](PERCEPTION.md).
 
 ## Calibration
 

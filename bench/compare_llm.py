@@ -87,7 +87,9 @@ def ask_llm(record: dict, mode: str, a) -> tuple[dict, float]:
 def ask_dragonfly(record: dict, a) -> tuple[dict, float]:
     body = {"state": record["state"], "questions": {k: {f: v for f, v in q.items() if f in ("type", "instructions", "criteria")}
                                                     for k, q in record["questions"].items()}}
-    headers = {"authorization": f"Bearer {a.dragonfly_key}"} if a.dragonfly_key else {}
+    headers = {"cache-control": "no-cache"}  # measure the model, never the answer cache
+    if a.dragonfly_key:
+        headers["authorization"] = f"Bearer {a.dragonfly_key}"
     out, ms = post(f"{a.dragonfly.rstrip('/')}/v1/systemone", body, headers)
     answers = {}
     for qid, ans in out["answers"].items():

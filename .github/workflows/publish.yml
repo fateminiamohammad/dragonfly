@@ -22,6 +22,10 @@ jobs:
             context: model-service
             dockerfile: model-service/Dockerfile
             target: runtime
+          - name: perception-service
+            context: perception-service
+            dockerfile: perception-service/Dockerfile
+            target: runtime
           - name: backend
             context: backend
             dockerfile: backend/Dockerfile

@@ -85,3 +85,56 @@ def test_save_and_load_roundtrip(decoder_engine, tmp_path):
     loaded = Engine.load(str(tmp_path / "ck"), "cpu")
     rec = {"state": STATE, "questions": [Q1, Q2]}
     assert probs(loaded, rec)[0][0] == pytest.approx(probs(decoder_engine, rec)[0][0], abs=1e-5)
+
+
+def test_state_cache_gives_identical_answers(decoder_engine):
+    """The KV-cached path (state read once, reused) must equal the full packed pass, first and second time."""
+    records = [{"state": STATE, "questions": [Q1, Q2]}, {"state": "a good review", "questions": [Q2]}]
+    full = decoder_engine.probs(records)[0]
+    decoder_engine.enable_state_cache(size=4, min_tokens=0)
+    first = decoder_engine.probs(records)[0]
+    again = decoder_engine.probs(records)[0]  # served from the cache
+    assert decoder_engine.state_cache.stats() == {"states": 2, "hits": 2, "misses": 2}
+    for a, b, c in zip(full, first, again):
+        for x, y, z in zip(a, b, c):
+            assert x == pytest.approx(y, abs=1e-5) and x == pytest.approx(z, abs=1e-5)
+
+
+def test_state_cache_evicts_by_tokens(decoder_engine):
+    from dragonfly.models.decoder import StateCache
+    cache = StateCache(size=10, max_tokens=5)
+    cache.put((1, 2, 3), "a")
+    cache.put((4, 5, 6), "b")  # 6 tokens > 5: the older entry goes
+    assert cache.get((1, 2, 3)) is None and cache.get((4, 5, 6)) == "b"
+
+
+def test_short_states_skip_the_state_cache(decoder_engine):
+    decoder_engine.enable_state_cache(size=4)  # default min_tokens=512: these short states take the batched path
+    decoder_engine.probs([{"state": STATE, "questions": [Q1]}])
+    assert decoder_engine.state_cache.stats() == {"states": 0, "hits": 0, "misses": 0}
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA GPU")
+def test_decoder_graph_replay_matches_eager(decoder_engine):
+    """Tier M CUDA graphs: padding rows/tokens to a bucket must not change answers (fp32: only padding could)."""
+    decoder_engine.model.cuda()
+    decoder_engine.device, decoder_engine.autocast = "cuda", False
+    records = [{"state": STATE, "questions": [Q1, Q2]}, {"state": "a good review", "questions": [Q2]}]
+    eager = decoder_engine.probs(records)[0]
+    decoder_engine.enable_cuda_graphs()
+    graphed = decoder_engine.probs(records)[0]
+    assert decoder_engine.graphs.stats()["replays"] == 1
+    for a, b in zip(eager, graphed):
+        for x, y in zip(a, b):
+            assert x == pytest.approx(y, abs=1e-5)
+
+
+def test_merged_lora_gives_identical_answers(decoder_engine):
+    from dragonfly.models.decoder import merge_lora
+    records = [{"state": STATE, "questions": [Q1, Q2]}]
+    before = decoder_engine.probs(records)[0]
+    assert merge_lora(decoder_engine.model.backbone) > 0
+    assert not any(isinstance(m, LoRALinear) for m in decoder_engine.model.modules())
+    after = decoder_engine.probs(records)[0]
+    for a, b in zip(before[0], after[0]):
+        assert a == pytest.approx(b, abs=1e-5)

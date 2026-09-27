@@ -7,9 +7,9 @@
 | Code | `models/encoder.py` | `models/decoder.py` |
 | Backbone | ModernBERT-base (150M), fully fine-tuned | Qwen3-1.7B-Base (4B optional), frozen, plus LoRA r=16 |
 | Layout | one row per question: `[CLS] instructions - opt1 - opt2 … [SEP] state [SEP]` | one packed sequence per request: `[state][q1][opts…][q2][opts…]` with a custom attention mask |
-| Order invariance | no; trained with shuffled options (flip rate 13.4%) | **yes, by construction**: options are isolated and share position IDs |
+| Order invariance | no; trained with shuffled options (flip rate 13.4%) | **by construction**: options are isolated and share position IDs (exact in fp32; 0.86% flips in bf16, from rounding on near-ties) |
 | Checkpoint | full encoder + head | LoRA adapters + head only; the base comes from the Hub |
-| Status | **trained** (`runs/dragonfly-s`) | built and tested; **not trained yet** |
+| Status | **trained** (`runs/dragonfly-s`) | **trained** (`runs/dragonfly-m`, 17 min, 18.5M trainable parameters) |
 
 **Shared design:**
 - Both use the same **pointer head**: a scaled dot product of the question query against each option key, then a
@@ -19,7 +19,12 @@
   - `score` is a choice over the ordered levels, and the answer is the expected level.
 
 **Cascade:** with `DRAGONFLY_CHECKPOINT_M` set, tier S answers first and questions below
-`DRAGONFLY_CASCADE_THRESHOLD` (default 0.8) are re-asked to tier M.
+`DRAGONFLY_CASCADE_THRESHOLD` are re-asked to tier M. The threshold is **0.55**, chosen on the calibration split with
+`scripts/tune_cascade.py`: the smallest threshold within 1 point of tier M's accuracy.
+
+**Tier M document cache:** states of 512 tokens or more keep their KV cache (`DRAGONFLY_STATE_CACHE` entries), so
+repeated long documents only pay for their questions. It is tested identical to the full pass. Shorter states use the
+batched path, because there the cache measured no gain.
 
 ## Data
 
@@ -84,41 +89,109 @@ docker logs -f dragonfly-trainer
 
 Each metric is also reported `by_source` and `by_type`.
 
-## Results so far
+## Results
 
-Dragonfly-S, 3 epochs (6 min on an RTX 3090 Ti), temperature 2.07, decision-v2 test (1,440 questions):
+All numbers are on the decision-v2 test split (1,440 questions), RTX 3090 Ti.
 
-| Metric | Overall | choice | noul | score |
-|---|---|---|---|---|
-| Accuracy | 67.7% | 64.8% | 79.0% | 52.5% |
-| ECE | 0.038 | 0.033 | 0.026 | 0.084 |
-| auto_rate@5% | 35.6% | 31.8% | 58.5% | 2.1% |
+| | Dragonfly-S | Dragonfly-M | **Cascade S→M (0.55)** |
+|---|---|---|---|
+| Accuracy | 67.7% | 76.9% | **77.5%** |
+| ECE (lower is better) | 0.038 | 0.027 | - |
+| auto_rate@5% | 35.6% | 54.2% | - |
+| Option-order flip rate | 13.4% | 0.86% | - |
+| Questions answered by tier M | - | 100% | 42.3% |
+| Training time | 6 min | 17 min | - |
+| Temperature (fitted on calibration) | 2.07 | 1.63 | - |
 
-**By source:**
-- **Strongest:** IMDB 91.3%, DBpedia 87.9%, AG News 85.3%.
-- **Weakest:** MNLI 43.1%, SST-5 47.5%, contrastive 50.0%. These need reasoning; tier M is meant for them.
-- **Order flip rate:** 13.4%.
+**Distilled tier S (served):** tier S trained on tier M's calibrated probabilities mixed 50/50 with the labels
+(`scripts/distill_targets.py`). It improves every metric:
+
+| | Dragonfly-S | Dragonfly-S distilled |
+|---|---|---|
+| Accuracy | 67.7% | **68.2%** |
+| ECE | 0.038 | **0.032** |
+| Brier | 0.394 | **0.388** |
+| auto_rate@5% | 35.6% | **39.4%** |
+
+**Cascade operating points** (distilled S + M; threshold chosen on the calibration split, then measured once on test):
+
+| Threshold | Test accuracy | Escalated to tier M | Use |
+|---|---|---|---|
+| 0.20 | 72.2% | 14.2% | fastest |
+| **0.45** (default) | **76.6%** | **35.5%** | balanced: M's accuracy, with 64.5% of questions staying on the fast tier |
+| 0.55 with the original S | 77.5% | 42.3% | earlier default |
+
+**By type (M):** choice 80.0%, noul 85.7%, score 49.6%. Score questions (5-level ratings such as SST-5 and Amazon) are
+the weakest for both tiers.
+
+**By source (M):** DBpedia 93.1%, IMDB 93.8%, contrastive 87.8%, AG News 86.7%, TREC 84.5%, BoolQ 77.5%, Yelp 71.3%,
+MNLI 64.7%, Banking77 58.6%, Amazon 53.8%, SST-5 41.3%.
+
+**For reference:** Kev reports 85.6% in-distribution for its 4B model. Dragonfly-M is a 1.7B model trained for
+17 minutes.
 
 ## Speed
 
-**Tier S on GPU:**
-- It replays as **CUDA graphs** (`models/graphs.py`).
-- An eager forward pass costs about 7 ms of GPU work but about 30–40 ms of CPU time, because it launches about 680
-  kernels. A graph replays them in one launch.
-- Inputs are padded to (rows, tokens, options) buckets, and each bucket is captured once on first use.
-- In fp32 the output matches eager to 1.2e-5.
+**Both tiers replay as CUDA graphs** (`models/graphs.py`). An eager forward pass is dominated by kernel launches:
+- tier S: about 680 launches, about 7 ms of GPU work but about 30–40 ms wall;
+- tier M: about 3,100 launches, 36 ms of GPU work but about 115 ms wall.
 
-**Measured with `bench/latency.py`** (unique requests, no cache; 3-question example; RTX 3090 Ti):
+A graph replays the whole pass in one launch:
+- Inputs are padded to shape buckets, captured once each on first use.
+- Padding is masked, and the results match eager in fp32 (tested).
+- Tier M uses fine token buckets (64, 96, 128, 160, …), because padding a decoder is real GPU work.
 
-| Clients | Round-trip p50 | Model time p50 | Throughput |
-|---|---|---|---|
-| 1 | 14.1 ms | 8.5 ms | 69 req/s |
-| 8 | 58.9 ms | 29.2 ms | 123 req/s |
-| 32 | 182.8 ms | 90.5 ms | 153 req/s (460 questions/s) |
+| Pass | Eager | CUDA graph |
+|---|---|---|
+| Tier S, 3-question request | 30 ms | **8.5 ms** |
+| Tier M, 1 request (136 tokens) | 113.5 ms | **20.6 ms** (LoRA merged into the weights at load: a further about 4 ms) |
+| Tier M, 8 requests batched | 113.5 ms | 102 ms |
 
-**Comparing against an LLM:** `bench/compare_llm.py` measures an LLM in two modes, `reason` (unfair) and
-`constrained` (fair), on the same data. It has not been run yet because it needs `LLM_BASE_URL`, `LLM_API_KEY` and
-`LLM_MODEL`.
+**End to end with `bench/latency.py`** (unique requests, no answer cache; 3-question example request):
+
+| Setup | Clients | Round-trip p50 | Model p50 | Throughput |
+|---|---|---|---|---|
+| Tier S only | 1 | **14.1 ms** | 8.5 ms | 69 req/s |
+| Tier S only | 32 | 182.8 ms | 90.5 ms | 153 req/s (460 questions/s) |
+| Cascade S→M (2 of the 3 questions escalate), LoRA merged | 1 | **31.0 ms** | 24.4 ms | 32 req/s |
+| Cascade S→M, LoRA merged | 32 | 618 ms | 376 ms | 45 req/s (136 questions/s; tier M compute-bound at about 50% of bf16 peak) |
+
+**Serving optimizations for tier M:**
+- LoRA is merged into the base weights at load (`Engine.load(..., merge=True)`), which is tested identical.
+- Common graph shapes are captured at startup (`DRAGONFLY_WARMUP`), so no request pays the one-off capture. p95 went
+  from 365 to 38 ms.
+- Buckets go up to 64 rows, so large escalated batches never fall back to eager.
+
+**Not adopted: ONNX Runtime / TensorRT export for tier S.**
+- CUDA graphs already remove the launch overhead: 8.5 ms model time against about 7 ms of pure GPU work.
+- ONNX Runtime GPU measured slower than the torch path on this machine (OCR: 535 vs 144 ms).
+- We keep it as a possible follow-up for TensorRT FP8/INT8, not as a default.
+
+## Versus a common LLM
+
+All runs use the same RTX 3090 Ti, the same decision-v2 test requests, and `bench/compare_llm.py`. The LLMs run
+locally in Ollama, and Dragonfly bypasses its answer cache (`Cache-Control: no-cache`). Dragonfly is the served
+configuration: distilled tier S plus tier M, cascade threshold 0.45.
+
+| Against | Requests | Dragonfly accuracy / p50 | LLM accuracy / p50 (p95) | Dragonfly is |
+|---|---|---|---|---|
+| Qwen2.5-7B-Instruct, answer only (fair) | 100 | **79.1% / 18 ms** | 74.4% / 103 ms (208 ms) | **5.7× faster** |
+| Qwen2.5-7B-Instruct, reasoning first | 100 | 79.1% / 18 ms | 76.7% / 995 ms (1.6 s) | **55× faster** |
+| Qwen3-8B, thinking model | 50 | **84.6% / 16 ms** | 80.0% / 1,658 ms (7.0 s) | **105× faster** (p50 and mean) |
+
+**What this shows:**
+- Dragonfly is **more accurate than every LLM we tested**.
+- It is **55–105× faster than LLMs that reason or think** on the same GPU.
+- It is **about 6× faster than a small local LLM that only outputs an answer**. That LLM is fast because it's local and
+  its output is tiny.
+
+**About the 200× target:** we have **not measured 200× against a local LLM**.
+- Hosted APIs add network and queueing time. Jev's 20–200× was measured against hosted frontier models that took
+  3–329 s. A hosted comparison is one command (`LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`), but it needs a key.
+- To reach 200× against the local thinking model, Dragonfly would need about 8 ms end to end. Tier S alone is at
+  14 ms today.
+
+Raw results: `runs/compare-llm-*.json`.
 
 ## Publishing a checkpoint
 

@@ -18,7 +18,9 @@ The pointer head compares the question's last token (query) with each option's l
 
 from __future__ import annotations
 
+import copy
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import torch
@@ -172,8 +174,93 @@ class DecoderDecider(nn.Module):
         dtype = next(self.backbone.parameters()).dtype
         mask = attention_mask(qid, opt, dtype)
         hidden = self.backbone(input_ids=input_ids, attention_mask=mask, position_ids=position_ids).last_hidden_state
-        flat = hidden.reshape(-1, hidden.shape[-1])
-        query = flat[query_idx].to(self.head.q.weight.dtype)
-        keys = flat[key_idx.clamp(min=0)].to(self.head.q.weight.dtype)
+        return self.pointer(hidden.reshape(-1, hidden.shape[-1]), query_idx, key_idx)
+
+    def pointer(self, flat_hidden: torch.Tensor, query_idx: torch.Tensor, key_idx: torch.Tensor) -> torch.Tensor:
+        """Pointer head over flattened (rows * tokens, hidden) states: question-query tokens vs option-key tokens."""
+        query = flat_hidden[query_idx].to(self.head.q.weight.dtype)
+        keys = flat_hidden[key_idx.clamp(min=0)].to(self.head.q.weight.dtype)
         logits = self.head(query, keys).float()
         return logits.masked_fill(key_idx < 0, float("-inf"))
+
+    # ---- state (document) cache ----------------------------------------------------------------------------------
+    @torch.inference_mode()
+    def logits_cached(self, tokenizer, record: dict, cache: StateCache) -> tuple[torch.Tensor, int]:
+        """One record, reusing the state's keys/values when the same state was read before. Returns the same logits as
+        forward() on this record (the state is causal and seen identically by every branch), plus the token count.
+
+        The state runs once; its KV cache is kept (LRU). Each later request with that state only runs its question
+        branches against the cached prefix."""
+        p = pack(tokenizer, record, self.max_state, self.max_branch)
+        device = next(self.backbone.parameters()).device
+        dtype = next(self.backbone.parameters()).dtype
+        n_state = p.qid.count(-1)
+        key = tuple(p.ids[:n_state])
+        past = cache.get(key)
+        if past is None:
+            out = self.backbone(input_ids=torch.tensor([p.ids[:n_state]], device=device),
+                                position_ids=torch.tensor([p.pos[:n_state]], device=device), use_cache=True)
+            past = out.past_key_values
+            cache.put(key, past)
+        past = copy.deepcopy(past)  # the forward below appends to the cache in place
+        qid = torch.tensor([p.qid[n_state:]], device=device)
+        opt = torch.tensor([p.opt[n_state:]], device=device)
+        branch = attention_mask(qid, opt, dtype)  # (1, 1, Lb, Lb): the branch rules among branch tokens
+        mask = torch.cat([torch.zeros((1, 1, branch.shape[2], n_state), dtype=dtype, device=device), branch], dim=-1)
+        hidden = self.backbone(input_ids=torch.tensor([p.ids[n_state:]], device=device), attention_mask=mask,
+                               position_ids=torch.tensor([p.pos[n_state:]], device=device), past_key_values=past,
+                               use_cache=True).last_hidden_state[0]
+        n_opts = max(len(k) for k in p.keys)
+        key_idx = torch.full((len(p.keys), n_opts), -1, dtype=torch.long, device=device)
+        for i, k in enumerate(p.keys):
+            key_idx[i, : len(k)] = torch.tensor([j - n_state for j in k], device=device)
+        query = hidden[torch.tensor([j - n_state for j in p.query], device=device)].to(self.head.q.weight.dtype)
+        keys = hidden[key_idx.clamp(min=0)].to(self.head.q.weight.dtype)
+        logits = self.head(query, keys).float().masked_fill(key_idx < 0, float("-inf"))
+        return logits, len(p.ids)
+
+
+class StateCache:
+    """LRU of state KV caches, bounded by entries and by total cached tokens (KV memory grows with tokens)."""
+
+    def __init__(self, size: int = 32, max_tokens: int = 65536):
+        self.size = size
+        self.max_tokens = max_tokens
+        self.entries: OrderedDict[tuple, object] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: tuple):
+        value = self.entries.get(key)
+        if value is None:
+            self.misses += 1
+            return None
+        self.entries.move_to_end(key)
+        self.hits += 1
+        return value
+
+    def put(self, key: tuple, value) -> None:
+        if not self.size or len(key) > self.max_tokens:
+            return
+        self.entries[key] = value
+        while len(self.entries) > self.size or sum(len(k) for k in self.entries) > self.max_tokens:
+            self.entries.popitem(last=False)
+
+    def stats(self) -> dict:
+        return {"states": len(self.entries), "hits": self.hits, "misses": self.misses}
+
+
+@torch.no_grad()
+def merge_lora(model: nn.Module) -> int:
+    """For inference: fold every LoRA adapter into its base weight (W + scale * B @ A) and drop the adapter. Same
+    function, but one matmul per layer instead of three, and no extra kernels. Returns the number merged."""
+    merged = 0
+    for module in list(model.modules()):
+        for name, child in list(module.named_children()):
+            if isinstance(child, LoRALinear):
+                base = child.base
+                delta = (child.lora_b.weight.float() @ child.lora_a.weight.float()) * child.scale
+                base.weight.copy_((base.weight.float() + delta).to(base.weight.dtype))
+                setattr(module, name, base)
+                merged += 1
+    return merged

@@ -14,6 +14,7 @@ docker compose -f docker-compose.local.yml --env-file docker/.env up -d --build
 | http://localhost:8080/api/... | backend API (Bearer JWT) |
 | http://localhost:8080/health | model-service health |
 | http://localhost:8000 | model-service directly |
+| perception-service:8001 | internal only (reach it through `/v1/perceive`); first start downloads about 3 GB of models |
 | localhost:5434 | Postgres (user and password from `docker/.env`) |
 
 **Compose profiles:**
@@ -24,6 +25,7 @@ docker compose -f docker-compose.local.yml --env-file docker/.env up -d --build
 | `train-m` | `trainer-m` | train Dragonfly-M |
 | `plugins` | `plugin-policy` | example gRPC plugin |
 | `bench` | `bench` | Dragonfly vs an LLM |
+| `llm` | `llm` | local Ollama LLM for the comparison (`ollama pull qwen2.5:7b-instruct`, `qwen2.5vl:7b`) |
 
 ```bash
 docker compose -f docker-compose.local.yml --env-file docker/.env ps           # status
@@ -49,9 +51,20 @@ cd model-service
 python -m venv .venv && . .venv/Scripts/activate      # Linux/macOS: .venv/bin/activate
 pip install torch --index-url https://download.pytorch.org/whl/cu126   # or whl/cpu
 pip install -e ".[train,grpc,dev]"
-pytest                                    # 52 tests, tiny random models, no downloads; the CUDA-graph test runs only with a GPU
+pytest                                    # 64 tests, tiny random models, no downloads; the 2 CUDA-graph tests need a GPU
 ruff check --config pyproject.toml src tests ../plugins ../bench ../scripts
 DRAGONFLY_CHECKPOINT=../runs/dragonfly-s dragonfly-serve     # :8000
+```
+
+**perception-service:**
+
+```bash
+cd perception-service
+python -m venv .venv && . .venv/Scripts/activate
+pip install torch --index-url https://download.pytorch.org/whl/cu126
+pip install -e ".[dev]"
+pytest                                  # 14 tests, stub models, no downloads
+PERCEPTION_PORT=8001 dragonfly-perception
 ```
 
 **backend** (needs Postgres and Redis; start them with compose: `up -d postgres redis`):
@@ -84,5 +97,6 @@ npm run dev          # :5173, proxies /api to localhost:3000
 | Workflow | Checks |
 |---|---|
 | `model-service-ci.yml` | ruff and pytest on CPU PyTorch; runtime image build |
+| `perception-service-ci.yml` | ruff and pytest on CPU PyTorch; runtime image build |
 | `web-ci.yml` | backend typecheck, lint, test and build; ui test and build |
-| `publish.yml` | on `main`, pushes `ghcr.io/fateminiamohammad/dragonfly-{model-service,backend,ui,plugin-policy}:<sha>` and `:latest` |
+| `publish.yml` | on `main`, pushes `ghcr.io/fateminiamohammad/dragonfly-{model-service,perception-service,backend,ui,plugin-policy}:<sha>` and `:latest` |

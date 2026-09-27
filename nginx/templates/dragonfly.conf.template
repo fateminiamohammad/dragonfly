@@ -27,7 +27,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    client_max_body_size 4m;
+    client_max_body_size 30m;  # images/audio arrive base64-encoded in JSON
 
     location /v1/ {
         set $model_upstream http://model-service:8000;

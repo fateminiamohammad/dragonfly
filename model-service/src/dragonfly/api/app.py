@@ -18,6 +18,7 @@ from .. import __version__
 from ..auth import KeyStore
 from ..batching import Worker
 from ..cache import AnswerCache, record_key
+from ..media import MediaError, MediaResolver, find_media
 from ..plugins import PluginError, PluginHost
 from ..schema import MODEL_NAMES, DecideRequest, to_answers, to_record
 
@@ -31,8 +32,9 @@ MODEL_LATENCY = Histogram("dragonfly_model_seconds", "Forward-pass time of the b
 
 
 def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list[str] | None = None,
-               keys: KeyStore | None = None, cache: AnswerCache | None = None) -> FastAPI:
-    """No keys configured = open server (local default)."""
+               keys: KeyStore | None = None, cache: AnswerCache | None = None,
+               media: MediaResolver | None = None) -> FastAPI:
+    """No keys configured = open server (local default). `media` enables images/audio in the state (perception-service)."""
     plugins = plugins or PluginHost([])
     keys = keys or KeyStore(api_keys)
     cache = cache or AnswerCache(0)
@@ -42,6 +44,8 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
         yield
         plugins.shutdown()
         worker.close()
+        if media is not None:
+            await media.close()
 
     app = FastAPI(title="dragonfly", version=__version__, lifespan=lifespan)
 
@@ -66,11 +70,18 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
 
     async def decide(req: DecideRequest, request: Request, background: BackgroundTasks) -> dict:
         started = time.perf_counter()
+        media_ms = 0.0
         try:
+            if find_media(req.state):
+                if media is None:
+                    raise MediaError("this server has no perception-service (PERCEPTION_URL): images and audio are not supported")
+                state, media_ms = await media.resolve(req.state)
+                req = req.model_copy(update={"state": state})
             req = plugins.on_request(req)
             record, meta = to_record(req)
             key = record_key(record, req.model)
-            hit = cache.get(key)
+            # "Cache-Control: no-cache" skips the lookup (standard HTTP semantics); the answer is still stored
+            hit = None if "no-cache" in request.headers.get("cache-control", "") else cache.get(key)
             CACHE.labels("hit" if hit else "miss").inc()
             if hit:
                 probs, stats = hit
@@ -86,13 +97,16 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
             body = {
                 "model": req.model,
                 "answers": answers,
-                "usage": {"input_tokens": stats["tokens"], "output_tokens": 0},
+                "usage": {"input_tokens": stats["tokens"], "output_tokens": 0, "media_ms": media_ms},
                 "latency_ms": latency,
                 "cached": bool(hit),
             }
             body = plugins.on_decision(req, body)
         except PluginError as e:
             REQUESTS.labels("rejected").inc()
+            raise HTTPException(e.status, str(e)) from e
+        except MediaError as e:
+            REQUESTS.labels("media_error").inc()
             raise HTTPException(e.status, str(e)) from e
         except ValueError as e:
             REQUESTS.labels("invalid").inc()
@@ -106,6 +120,16 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
 
     app.post("/v1/systemone")(decide)
     app.post("/v1/decide")(decide)
+
+    @app.post("/v1/perceive")
+    async def perceive(payload: dict):
+        """Images/audio -> text only (no decision): proxied to the perception-service, with the same API-key auth."""
+        if media is None:
+            raise HTTPException(404, "this server has no perception-service (PERCEPTION_URL)")
+        try:
+            return await media.perceive(payload)
+        except MediaError as e:
+            raise HTTPException(e.status, str(e)) from e
 
     @app.get("/v1/models")
     def models():
