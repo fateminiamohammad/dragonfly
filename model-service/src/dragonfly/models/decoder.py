@@ -158,10 +158,11 @@ def collate(packed: list[Packed], pad_id: int) -> dict[str, torch.Tensor]:
 
 # ---- model ---------------------------------------------------------------------------------------------------------
 class DecoderDecider(nn.Module):
-    def __init__(self, backbone: nn.Module, head_dim: int = 256, max_state: int = 2048, max_branch: int = 1024):
+    def __init__(self, backbone: nn.Module, head_dim: int = 256, max_state: int = 2048, max_branch: int = 1024,
+                 head_norm: bool = False):
         super().__init__()
         self.backbone = backbone
-        self.head = PointerHead(backbone.config.hidden_size, head_dim)
+        self.head = PointerHead(backbone.config.hidden_size, head_dim, head_norm)
         self.max_state = max_state
         self.max_branch = max_branch
 

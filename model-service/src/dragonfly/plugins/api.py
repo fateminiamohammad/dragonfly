@@ -20,7 +20,7 @@ from typing import Any
 
 from ..schema import DecideRequest
 
-API_VERSION = "1.0"
+API_VERSION = "1.1"  # 1.1: `blocking` / `timeout_s` (additive; 1.0 plugins still load)
 
 
 @dataclass
@@ -42,14 +42,20 @@ class PluginError(Exception):
 class Plugin:
     """Override any hook; the defaults pass everything through unchanged.
 
-    Hooks run on the request path, so keep them fast. `fail_open = True` means an unexpected exception is logged and
-    the plugin is skipped for that request; `False` (default) fails the request with 500. PluginError always rejects.
+    Hooks run on the request path. A fast, pure-Python hook runs inline. A hook that waits on I/O (an LLM, an HTTP
+    call, a database) must set `blocking = True`: the host then runs it in a worker thread, off the event loop that
+    serves every other request, and gives up after `timeout_s` seconds (treated like an exception).
+
+    `fail_open = True` means an unexpected exception or timeout is logged and the plugin is skipped for that request;
+    `False` (default) fails the request with 500. PluginError always rejects.
     """
 
     name: str = ""
     version: str = "0.0.0"
     api_version: str = API_VERSION
     fail_open: bool = False
+    blocking: bool = False
+    timeout_s: float = 5.0
 
     def setup(self, ctx: PluginContext) -> None:
         """Called once at startup."""

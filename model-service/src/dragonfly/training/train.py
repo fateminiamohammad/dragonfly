@@ -75,7 +75,7 @@ def train(args) -> dict:
     device = args.device or default_device()
     tokenizer = AutoTokenizer.from_pretrained(args.backbone)
     config = CheckpointConfig(tier=args.tier, backbone=args.backbone, head_dim=args.head_dim, max_length=args.max_length,
-                              lora_r=args.lora_r, lora_alpha=2 * args.lora_r)
+                              lora_r=args.lora_r, lora_alpha=2 * args.lora_r, head_norm=not args.no_head_norm)
     model = build_model(config, load_backbone(args.backbone, args.tier, device))
     if args.grad_checkpointing:
         model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
@@ -90,13 +90,13 @@ def train(args) -> dict:
     log.info("trainable parameters: %.1fM", sum(p.numel() for p in head_params + body_params) / 1e6)
     params = [
         {"params": body_params, "lr": args.lr or (2e-4 if args.tier == "M" else 3e-5)},
-        {"params": head_params, "lr": args.head_lr},
+        {"params": head_params, "lr": args.head_lr or (3e-4 if args.tier == "M" else 1e-3)},
     ]
     opt = torch.optim.AdamW(params, weight_decay=0.01)
     sched = get_cosine_schedule_with_warmup(opt, int(0.06 * total), total)
     rng = random.Random(args.seed)
 
-    step, started = 0, time.time()
+    step, started, ema = 0, time.time(), None
     for epoch in range(args.epochs):
         model.train()
         order = list(range(len(rows)))
@@ -112,8 +112,10 @@ def train(args) -> dict:
             sched.step()
             opt.zero_grad(set_to_none=True)
             step += 1
+            ema = loss.item() if ema is None else 0.98 * ema + 0.02 * loss.item()
             if step % args.log_every == 0:
-                log.info("epoch %d step %d/%d loss %.4f (%.0fs)", epoch + 1, step, total, loss.item(), time.time() - started)
+                log.info("epoch %d step %d/%d loss %.4f (running avg %.4f) (%.0fs)", epoch + 1, step, total, loss.item(),
+                         ema, time.time() - started)
     model.eval()
 
     if args.calibration:
@@ -150,7 +152,8 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--lr", type=float, help="backbone / LoRA learning rate (default 3e-5 for S, 2e-4 for M)")
-    ap.add_argument("--head-lr", type=float, default=1e-3)
+    ap.add_argument("--no-head-norm", action="store_true", help="old head without LayerNorm (only to reproduce earlier runs)")
+    ap.add_argument("--head-lr", type=float, help="pointer head learning rate (default 1e-3 for S, 3e-4 for M)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device")
     ap.add_argument("--log-every", type=int, default=50)

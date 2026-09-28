@@ -34,6 +34,7 @@ class CheckpointConfig:
     max_state: int = 2048  # tier M: state tokens kept
     lora_r: int = 16
     lora_alpha: float = 32
+    head_norm: bool = False  # LayerNorm before the pointer-head projections (on for new trainings: stabler)
     temperature: float = 1.0
     trained: bool = False
 
@@ -44,10 +45,10 @@ def default_device() -> str:
 
 def build_model(config: CheckpointConfig, backbone: torch.nn.Module) -> torch.nn.Module:
     if config.tier == "S":
-        return EncoderDecider(backbone, config.head_dim)
+        return EncoderDecider(backbone, config.head_dim, config.head_norm)
     if config.tier == "M":
         apply_lora(backbone, config.lora_r, config.lora_alpha)
-        return DecoderDecider(backbone, config.head_dim, config.max_state, config.max_length)
+        return DecoderDecider(backbone, config.head_dim, config.max_state, config.max_length, config.head_norm)
     raise ValueError(f"unknown tier {config.tier!r}")
 
 

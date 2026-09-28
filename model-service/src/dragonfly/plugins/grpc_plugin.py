@@ -33,6 +33,8 @@ class GrpcPlugin(Plugin):
 
         self.timeout = float(ctx.config.get("timeout_ms", "50")) / 1000
         self.fail_open = ctx.config.get("fail_open", "0") in ("1", "true", "yes")
+        self.blocking = True  # a network call: run off the event loop
+        self.timeout_s = self.timeout + 1.0  # the gRPC deadline fires first; this is only a backstop
         self.channel = grpc.insecure_channel(self.target)
         self._rpc = {
             m: self.channel.unary_unary(SERVICE + m, request_serializer=lambda b: b, response_deserializer=lambda b: b)

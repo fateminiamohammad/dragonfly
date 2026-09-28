@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { KEY_PREFIX, keyDigest, newKey } from '../src/keys/keys.service';
+import { optionKeys, toTrainingRecord } from '../src/review/review.controller';
 import { lastDays } from '../src/usage/usage.controller';
 
 describe('API keys', () => {
@@ -21,5 +22,22 @@ describe('API keys', () => {
 describe('usage days', () => {
   it('lists the last n UTC days, oldest first', () => {
     expect(lastDays(3, new Date('2026-09-27T10:00:00Z'))).toEqual(['2026-09-25', '2026-09-26', '2026-09-27']);
+  });
+});
+
+
+describe('review export', () => {
+  const base = { id: 'x', created: 0, model: 'm', state: 'doc', question_id: 'q', answer: {} };
+  it('offers the API option keys per question type', () => {
+    expect(optionKeys({ type: 'noul', instructions: null, criteria: null })).toEqual(['false', 'true']);
+    expect(optionKeys({ type: 'score', instructions: null, criteria: ['a', 'b', 'c'] })).toEqual(['0', '1', '2']);
+    expect(optionKeys({ type: 'choice', instructions: null, criteria: { refund: null, billing: 'x' } })).toEqual(['refund', 'billing']);
+  });
+  it('exports labels in the training format (bool for noul, int for score)', () => {
+    const noul = toTrainingRecord({ ...base, question: { type: 'noul', instructions: 'urgent?', criteria: null }, label: 'true' });
+    expect(noul.questions.q.label).toBe(true);
+    const score = toTrainingRecord({ ...base, question: { type: 'score', instructions: null, criteria: ['a', 'b'] }, label: '1' });
+    expect(score.questions.q.label).toBe(1);
+    expect(score._meta.source).toBe('human-review');
   });
 });

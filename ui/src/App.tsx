@@ -5,9 +5,17 @@ import { Login } from './pages/Login';
 import { Media } from './pages/Media';
 import { Model } from './pages/Model';
 import { Playground } from './pages/Playground';
+import { Review } from './pages/Review';
 import { Usage } from './pages/Usage';
 
-const PAGES = { playground: 'Playground', media: 'Media', keys: 'API keys', usage: 'Usage', model: 'Model & plugins' } as const;
+const PAGES = {
+  playground: 'Playground',
+  media: 'Media',
+  review: 'Review',
+  keys: 'API keys',
+  usage: 'Usage',
+  model: 'Model & plugins',
+} as const;
 type Page = keyof typeof PAGES;
 
 function pageFromHash(): Page {
@@ -67,6 +75,7 @@ export function App() {
       <main>
         {page === 'playground' && <Playground />}
         {page === 'media' && <Media />}
+        {page === 'review' && <Review />}
         {page === 'keys' && <Keys />}
         {page === 'usage' && <Usage />}
         {page === 'model' && <Model />}

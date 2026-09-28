@@ -62,3 +62,59 @@ def test_discover_uses_entry_points_and_rejects_unknown(monkeypatch):
 def test_plugin_config_from_env():
     env = {"DRAGONFLY_PLUGIN_REDACT_PII_MODE": "strict", "OTHER": "x"}
     assert host_module.plugin_config("redact-pii", env) == {"mode": "strict"}
+
+
+def test_blocking_plugin_runs_off_the_event_loop_and_times_out():
+    import asyncio
+    import threading
+    import time
+
+    loop_thread = {}
+
+    class Slow(Plugin):
+        name = "slow"
+        blocking = True
+        timeout_s = 0.2
+        fail_open = True
+
+        def on_request(self, request):
+            loop_thread["hook"] = threading.get_ident()
+            time.sleep(1.0)  # longer than the budget
+            return request
+
+    async def run():
+        loop_thread["loop"] = threading.get_ident()
+        host = PluginHost([Slow()])
+        started = time.perf_counter()
+        # another coroutine keeps running while the slow hook waits: the loop is not blocked
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while time.perf_counter() - started < 0.15:
+                ticks += 1
+                await asyncio.sleep(0.01)
+        out, _ = await asyncio.gather(host.aon_request(REQ), ticker())
+        return out, time.perf_counter() - started, ticks
+
+    out, elapsed, ticks = asyncio.run(run())
+    assert out is REQ  # timed out, fail_open -> request unchanged
+    assert elapsed < 0.6 and ticks >= 5
+    assert loop_thread["hook"] != loop_thread["loop"]
+
+
+def test_blocking_plugin_fail_closed_raises_on_timeout():
+    import asyncio
+    import time
+
+    class Strict(Plugin):
+        name = "strict"
+        blocking = True
+        timeout_s = 0.1
+
+        def on_request(self, request):
+            time.sleep(0.5)
+            return request
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(PluginHost([Strict()]).aon_request(REQ))

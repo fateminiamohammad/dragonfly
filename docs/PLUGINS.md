@@ -20,6 +20,27 @@ Hooks run on the request path, so keep them fast.
 - Any other exception fails the request with 500. If you set `fail_open = True`, the plugin is logged and skipped for
   that request instead.
 
+## Free plugins
+
+Four practical plugins ship with the model-service (`dragonfly.essentials`, Apache-2.0). Enable them by name in
+`DRAGONFLY_PLUGINS` and configure them with `DRAGONFLY_PLUGIN_<NAME>_<KEY>` (see `docker/.env.example`).
+
+| Plugin | Hook | What it does | Settings (`<KEY>`) |
+|---|---|---|---|
+| `guardrails` | `on_request` | Redacts e-mails, IBANs, card and phone numbers; flags or blocks prompt injection and profanity; rejects oversized states (413). Adds a `guardrails` field to the response. | `PII` (redact/off), `INJECTION` and `PROFANITY` (flag/block/off), `MAX_STATE_CHARS`, `PROFANITY_WORDS` |
+| `human-review` | `on_low_confidence` | Queues unsure answers in Redis for the UI **Review** page. The answer itself is not changed. Reviewed items export as training JSONL, which closes the learning loop. | `REDIS_URL`, `SAMPLE`, `MAX_PENDING` |
+| `webhook-audit` | `on_decision` | Sends decisions to a webhook URL, a Slack incoming webhook and/or a JSONL file, from a background queue with retries. `WHEN` filters, e.g. `urgent.noul>0.8 or intent.choice==refund`. | `URL`, `SLACK_URL`, `FILE`, `WHEN`, `INCLUDE_STATE`, `RETRIES` |
+| `llm-escalation` | `on_low_confidence` | Asks any OpenAI-compatible LLM (default: the local Ollama from `--profile llm`) to pick one of the options. The replacement answer is marked `tier: "llm"`, `calibrated: false` and keeps Dragonfly's answer in `escalated_from`. If the LLM is down or slow, Dragonfly's answer stays. | `BASE_URL`, `MODEL`, `API_KEY`, `TIMEOUT_S` |
+
+`llm-escalation` and `human-review` act on answers below `DRAGONFLY_LOW_CONFIDENCE`, so set it (e.g. `0.5`).
+Escalated answers are as slow as the LLM: only the unsure fraction pays that cost.
+
+### Blocking plugins
+
+A plugin that does network or disk I/O sets `blocking = True` (API 1.1). Its hooks then run in a thread pool with a
+`timeout_s` budget, so they never stall other requests on the event loop. On timeout a `fail_open` plugin is skipped;
+otherwise the request fails. gRPC plugins are always blocking.
+
 ## Writing one
 
 ```python

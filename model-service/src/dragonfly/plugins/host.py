@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from importlib.metadata import entry_points
@@ -68,6 +69,42 @@ class PluginHost:
                 raise
             log.exception("plugin %s failed in %s; skipped (fail_open)", plugin.name, hook)
             return fallback
+
+    async def _acall(self, plugin: Plugin, hook: str, fallback, *args):
+        """Like _call, but a `blocking` plugin runs in a worker thread with its time budget, so a slow LLM or HTTP call
+        never stalls the event loop (and with it every other request)."""
+        if not plugin.blocking:
+            return self._call(plugin, hook, fallback, *args)
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(getattr(plugin, hook), *args), timeout=plugin.timeout_s)
+        except PluginError:
+            raise
+        except Exception as e:
+            if not plugin.fail_open:
+                raise
+            reason = "timed out" if isinstance(e, TimeoutError) else "failed"
+            log.warning("plugin %s %s in %s after %.1fs budget; skipped (fail_open)", plugin.name, reason, hook,
+                        plugin.timeout_s)
+            return fallback
+
+    async def aon_request(self, request: DecideRequest) -> DecideRequest:
+        for p in self.plugins:
+            request = await self._acall(p, "on_request", request, request)
+        return request
+
+    async def aon_decision(self, request: DecideRequest, response: dict[str, Any]) -> dict[str, Any]:
+        if self.low_confidence > 0:
+            for qid, answer in list(response["answers"].items()):
+                if answer.get("confidence", 1.0) >= self.low_confidence:
+                    continue
+                for p in self.plugins:
+                    replacement = await self._acall(p, "on_low_confidence", None, request, qid, answer)
+                    if replacement is not None:
+                        response["answers"][qid] = replacement
+                        break
+        for p in self.plugins:
+            response = await self._acall(p, "on_decision", response, request, response)
+        return response
 
     def on_request(self, request: DecideRequest) -> DecideRequest:
         for p in self.plugins:

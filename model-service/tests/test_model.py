@@ -55,3 +55,14 @@ def test_save_and_load_roundtrip(engine, tmp_path):
     a = engine.probs(rec)[0]
     b = loaded.probs(rec)[0]
     assert torch.allclose(torch.tensor(a[0][0]), torch.tensor(b[0][0]), atol=1e-5)
+
+
+def test_head_norm_bounds_logits_and_old_checkpoints_still_load(engine, tmp_path):
+    from dragonfly.models.encoder import PointerHead
+    torch.manual_seed(0)
+    q, k = torch.randn(2, 32) * 1000, torch.randn(2, 3, 32) * 1000  # huge activations, like a bigger backbone
+    plain, normed = PointerHead(32, 16), PointerHead(32, 16, norm=True)
+    normed.load_state_dict(plain.state_dict(), strict=False)
+    assert plain(q, k).abs().max() > 100 * normed(q, k).abs().max()
+    engine.save(tmp_path / "old")  # saved without head_norm (the default): loads exactly as before
+    assert not Engine.load(str(tmp_path / "old"), "cpu").config.head_norm

@@ -77,7 +77,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                     raise MediaError("this server has no perception-service (PERCEPTION_URL): images and audio are not supported")
                 state, media_ms = await media.resolve(req.state)
                 req = req.model_copy(update={"state": state})
-            req = plugins.on_request(req)
+            req = await plugins.aon_request(req)
             record, meta = to_record(req)
             key = record_key(record, req.model)
             # "Cache-Control: no-cache" skips the lookup (standard HTTP semantics); the answer is still stored
@@ -101,7 +101,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 "latency_ms": latency,
                 "cached": bool(hit),
             }
-            body = plugins.on_decision(req, body)
+            body = await plugins.aon_decision(req, body)
         except PluginError as e:
             REQUESTS.labels("rejected").inc()
             raise HTTPException(e.status, str(e)) from e

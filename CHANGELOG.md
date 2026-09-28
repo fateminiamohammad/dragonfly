@@ -2,7 +2,20 @@
 
 All notable changes to this project. The plugin API (`dragonfly.plugins.api.API_VERSION`) follows semver.
 
-## [Unreleased]: v0.1.0
+## [Unreleased]: v0.2.0
+
+### Plugins
+- Plugin API 1.1: `blocking = True` plugins run their hooks in a thread pool with a `timeout_s` budget, so network I/O
+  never stalls the event loop. gRPC plugins are blocking.
+- Free built-in plugins (`dragonfly.essentials`): `guardrails` (PII redaction, injection/profanity checks, state size
+  limit), `human-review` (Redis queue of unsure answers), `webhook-audit` (webhook / Slack / JSONL with filters and
+  retries) and `llm-escalation` (any OpenAI-compatible LLM for unsure answers, marked `tier: "llm"`).
+- Backend `/api/review` and a UI **Review** page: label unsure decisions and export them as training JSONL.
+
+### Data
+- `scripts/build_mix.py`: the mix-v1 training set (32.9k questions), deduplicated and screened against every test split.
+
+## v0.1.0
 
 ### Model
 - Dragonfly-S: ModernBERT encoder + pointer head; one row per question, options placed before the state so truncation

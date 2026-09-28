@@ -390,3 +390,13 @@ pre.ocr {
   padding: 10px 12px;
   font-size: 14px;
 }
+
+.review-option {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 52px;
+}
+.review-option button {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

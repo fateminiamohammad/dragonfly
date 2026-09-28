@@ -18,24 +18,29 @@ OPTION_PREFIX = "\n- "
 
 
 class PointerHead(nn.Module):
-    """Scaled dot product between a question query and one key per option, as in Kev."""
+    """Scaled dot product between a question query and one key per option, as in Kev.
 
-    def __init__(self, hidden: int, dim: int = 256):
+    norm=True puts a LayerNorm on the hidden states before the projections, so the logit scale no longer depends on
+    the backbone's activation magnitudes. Without it, Qwen3-4B's larger hidden states blew the logits up mid-training
+    (batch loss 17 at step 1,000, above log(255) = 5.5, the loss of a uniform guess)."""
+
+    def __init__(self, hidden: int, dim: int = 256, norm: bool = False):
         super().__init__()
+        self.norm = nn.LayerNorm(hidden) if norm else nn.Identity()
         self.q = nn.Linear(hidden, dim)
         self.k = nn.Linear(hidden, dim)
         self.scale = 1 / math.sqrt(dim)
 
     def forward(self, query: torch.Tensor, keys: torch.Tensor) -> torch.Tensor:
         # query (R, H), keys (R, K, H) -> logits (R, K)
-        return torch.einsum("rd,rkd->rk", self.q(query), self.k(keys)) * self.scale
+        return torch.einsum("rd,rkd->rk", self.q(self.norm(query)), self.k(self.norm(keys))) * self.scale
 
 
 class EncoderDecider(nn.Module):
-    def __init__(self, backbone: nn.Module, head_dim: int = 256):
+    def __init__(self, backbone: nn.Module, head_dim: int = 256, head_norm: bool = False):
         super().__init__()
         self.backbone = backbone
-        self.head = PointerHead(backbone.config.hidden_size, head_dim)
+        self.head = PointerHead(backbone.config.hidden_size, head_dim, head_norm)
 
     def encode(self, tokenizer, records: list[dict], max_length: int):
         """records -> (model inputs with one row per question, input tokens per record)."""
