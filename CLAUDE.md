@@ -34,13 +34,14 @@ Every model in the request path is **non-autoregressive**: one forward pass, wit
 | Images and audio (perception-service) | done: CTC speech (en/fa), PP-OCR, SigLIP-2 tags; 22–39× faster than Qwen2.5-VL-7B, 7.8× faster than Whisper-turbo |
 | Backend, UI (Media page), keys and usage via Redis, plugins (Python + gRPC) | done, verified end to end (`scripts/e2e_media.py`) |
 | CI and GHCR publishing | green |
-| vs Kev (same GPU, same requests; `bench/compare_systemone.py`) | Dragonfly **about 2× faster** (about 3× at 8 clients) but **less accurate**: 77.1% vs Kev-0.8B 83.1%, Kev-4B 89.2% |
-| vs Jev | **not measured**: needs `TYPESAFE_API_KEY` (the harness supports it) |
+| vs Kev / Laya (same GPU, identical requests; `bench/compare_systemone.py`) | Dragonfly **fastest** (2–3.4× Kev, 1.2–2.3× Laya); **less accurate** than Kev-4B (89.2% vs 77.1% decision-v2) and Laya-td (76.7% vs Dragonfly-td 73.1% typed-decisions) |
+| vs Jev | measured only via **published** numbers (typed-decisions 72.7% at 710 ms hosted); direct run needs `TYPESAFE_API_KEY` |
+| General-model transfer | weak: Dragonfly zero-shot on typed-decisions 46.1% (the prior is 47.0%); Kev-4B 66.9% |
 | **200× vs GPT** | **not measured**: no hosted-API key. Local thinking LLM measured at 105×. |
 
 **Next steps:**
-0. Close the accuracy gap to Kev: more training data (Kev's decision-v7 and hard/devtools suites) and a larger tier M
-   (Qwen3-4B).
+0. Close the accuracy and generalization gap: train on much broader data (Kev's decision-v7, hard/devtools and
+   typed-decisions train splits), and use a larger tier M (Qwen3-4B).
 1. Measure against a hosted frontier API (set `LLM_*`, run `bench/compare_llm.py`).
 2. Publish checkpoints (`scripts/publish_hf.py`, needs `huggingface-cli login`).
 3. Make the GHCR packages public and tag `v0.1.0`.
@@ -64,6 +65,7 @@ Every model in the request path is **non-autoregressive**: one forward pass, wit
 | perception-service | 8001 (internal) | reached through model-service `/v1/perceive` or media in the state |
 | llm (Ollama) | 127.0.0.1:11434 | `llm` profile, only for benchmarks (qwen2.5:7b-instruct, qwen2.5vl:7b, qwen3:8b pulled) |
 | kev | 127.0.0.1:8009 | `kev` profile, benchmark opponent; `KEV_MODEL=jaredpalmer/kev-0.8b|kev-4b|kev-9b`; call it via `127.0.0.1`, not `localhost` |
+| laya | 127.0.0.1:8010 | `laya` profile, benchmark opponent; the request's `model` picks `english` / `multilingual` / `typed-decisions` |
 | backend | 3000 (internal) | reached through nginx `/api` |
 | ui | 80 (internal) | reached through nginx `/` |
 | postgres | 5434 → 5432 | |

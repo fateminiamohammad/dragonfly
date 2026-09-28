@@ -73,6 +73,18 @@ All notable changes to this project. The plugin API (`dragonfly.plugins.api.API_
 - So Dragonfly is about 2× faster (about 3× at 8 clients) and less accurate. Kev never trained on these test questions
   (checked against every data file in its repo).
 
+### Benchmark vs Laya, and Jev's published numbers
+- Laya is served from `laya[serve]==0.3.21` (`bench/laya/`, compose profile `laya`).
+- The typed-decisions benchmark is converted with `scripts/convert_typed_decisions.py`.
+- typed-decisions test (400 cases):
+  - Laya-typed-decisions: 76.7% at 55 ms;
+  - Dragonfly-td (tier S trained on its train split): 73.1% at 47 ms;
+  - Kev-4B zero-shot: 66.9% at 110 ms;
+  - Dragonfly general, zero-shot: 46.1%;
+  - Jev (published leaderboard): 72.7% at 710 ms hosted.
+- decision-v2: Laya base 66.3% at 48 ms.
+- Jev's published benchmarks are collected with sources in `docs/MODEL.md`.
+
 ### Serving
 - Tier M: LoRA merged into the weights at load (identical output). CUDA-graph buckets up to 64 rows. Warm-up capture
   at startup, which took p95 from 365 to 38 ms.

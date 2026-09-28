@@ -66,16 +66,35 @@ TypeSafe and Kev clients work by changing `base_url`.
 | Image → decision (OCR + tags + answer) | 71–104 ms | Qwen2.5-VL-7B: 2.2–3.0 s | **22–39× faster**, same answers |
 | 10.4 s speech → text | 71 ms | Whisper large-v3-turbo: 551 ms | **7.8× faster**, same words |
 
-**Versus Kev on the same GPU and the same 200 test requests** (`bench/compare_systemone.py`):
+**Versus other open decision models, and Jev's published numbers** (same GPU, identical requests;
+`bench/compare_systemone.py`):
 
-| | Dragonfly | Kev-0.8B | Kev-4B |
+| typed-decisions (400 cases) | Trained on it? | Accuracy | p50 |
 |---|---|---|---|
-| Accuracy | 77.1% | 83.1% | **89.2%** |
-| p50 latency (1 client) | **22 ms** | 43 ms | 44 ms |
-| Throughput (8 clients) | **21–44 req/s** | 17 req/s | 13 req/s |
+| Laya-typed-decisions | yes | **76.7%** | 55 ms |
+| **Dragonfly-td** | yes | 73.1% | **47 ms** |
+| Jev 1.13.0 *(published)* | no | 72.7% | 710 ms (hosted) |
+| Kev-4B | no | 66.9% | 110 ms |
+| Dragonfly (general) | no | 46.1% | 86 ms |
 
-Dragonfly is **about 2× faster than Kev (about 3× under load)**, but Kev is more accurate: it's a bigger, longer-trained
-model. **Jev isn't measured yet:** it needs a TypeSafe API key, and the harness runs it once `TYPESAFE_API_KEY` is set.
+| decision-v2 (200 requests) | Accuracy | p50 |
+|---|---|---|
+| Kev-4B | **89.2%** | 44 ms |
+| Kev-0.8B | 83.1% | 43 ms |
+| **Dragonfly** | 77.1% | **21 ms** |
+| Laya (English base) | 66.3% | 48 ms |
+
+**Dragonfly is the fastest system measured:**
+- 2–3.4× faster than Kev;
+- 1.2–2.3× faster than Laya;
+- 5–30× faster than Jev's published hosted latencies.
+
+**On accuracy, Dragonfly isn't the best:**
+- Kev-4B is more accurate on both benchmarks.
+- Laya-typed-decisions is more accurate on its own benchmark.
+- Dragonfly's general model doesn't transfer to workflows it never saw.
+
+Details and every source: [docs/MODEL.md](docs/MODEL.md#versus-kev-laya-and-jev).
 
 **Honest note on "200×":**
 - Measured locally, Dragonfly is 55–105× faster than LLMs that reason, and more accurate.

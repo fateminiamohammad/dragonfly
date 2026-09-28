@@ -1,17 +1,21 @@
-"""Head-to-head: any number of /v1/systemone servers (Dragonfly, Kev, Jev) on the same labelled requests.
+"""Head-to-head: any number of /v1/systemone servers (Dragonfly, Kev, Laya, Jev) on the same labelled requests.
 
 All of them speak the TypeSafe System One API, so each gets byte-identical request bodies, sent the same way, and is
 scored against the same labels. Latency is client-side round trip (network included, which matters for hosted Jev).
 
   python bench/compare_systemone.py --data data/decision-v2/test.jsonl --n 200 \\
-      --system dragonfly=http://localhost:8000@DRAGONFLY_API_KEY \\
-      --system kev-4b=http://localhost:8009 \\
+      --system dragonfly=http://127.0.0.1:8000@DRAGONFLY_API_KEY \\
+      --system kev-4b=http://127.0.0.1:8009 \\
+      --system laya-td=http://127.0.0.1:8010#typed-decisions \\
       --system jev=https://api.typesafe.ai@TYPESAFE_API_KEY
 
-A system is name=base_url, optionally @ENV_VAR naming the environment variable that holds its bearer key. A system
-whose key variable is unset is skipped with a note (so Jev is included only when you have a TypeSafe key). Dragonfly
-requests carry Cache-Control: no-cache so its answer cache can't flatter it; other servers ignore the header.
-Kev and Jev answers are read in either shape the API allows (noul as "noul" or "probability").
+A system is name=base_url[@ENV_VAR][#model]:
+  @ENV_VAR  the environment variable holding its bearer key; unset -> the system is skipped with a note
+            (so Jev is included only when you have a TypeSafe key)
+  #model    the request's `model` field (Laya picks its checkpoint by it: english, multilingual, typed-decisions)
+Use 127.0.0.1, not localhost: a port published on IPv4 loopback only costs ~2 s per request via localhost (IPv6 first).
+Dragonfly requests carry Cache-Control: no-cache so its answer cache can't flatter it; other servers ignore the header.
+Answers are read in either shape the API allows (noul as "noul" or "probability").
 """
 
 import argparse
@@ -55,10 +59,12 @@ def pct(xs: list[float], p: float) -> float:
 class System:
     def __init__(self, spec: str):
         name, rest = spec.split("=", 1)
+        rest, _, model = rest.partition("#")
         url, _, key_env = rest.partition("@")
         self.name, self.url, self.key_env = name, url.rstrip("/"), key_env
         self.key = os.environ.get(key_env) if key_env else None
-        self.model = "jev-latest" if "typesafe.ai" in url else "dragonfly-latest" if "dragonfly" in name else "kev-latest"
+        default = "jev-latest" if "typesafe.ai" in url else "dragonfly-latest" if "dragonfly" in name else "kev-latest"
+        self.model = model or default
 
     @property
     def available(self) -> bool:

@@ -193,50 +193,97 @@ configuration: distilled tier S plus tier M, cascade threshold 0.45.
 
 Raw results: `runs/compare-llm-*.json`.
 
-## Versus Kev and Jev
+## Versus Kev, Laya and Jev
 
-`bench/compare_systemone.py` sends byte-identical `/v1/systemone` requests to every system and scores them against
-the same labels.
+**Setup:**
+- Everything we measured ran on one RTX 3090 Ti with `bench/compare_systemone.py`.
+- Every system received byte-identical `/v1/systemone` requests and was scored against the same labels, one client,
+  after warm-up.
+- Kev and Laya were served exactly as their READMEs say, from pinned versions (`bench/kev/`, `bench/laya/`; compose
+  profiles `kev`, `laya`).
+- Jev is closed. Its rows are **published** numbers from the typed-decisions leaderboard, measured by others over the
+  network. They are not our measurement.
 
-**Test data:** 200 decision-v2 test requests (249 questions), with 30 warm-up requests excluded. Kev never trained on
-these questions: we checked every data file in Kev's repo, and the overlaps are only Kev's own *test* splits.
+### Benchmark 1: typed-decisions
 
-**Setup:** everything runs on the same RTX 3090 Ti. Kev is served exactly as its README says (`kev.serve`: bf16, CUDA
-graphs, fused Qwen3.5 kernels), from its repo at a pinned commit (`bench/kev/Dockerfile`, compose profile `kev`).
+400 cases and 2,000 decisions, from four workflows:
+- agent-trace observability;
+- customer service;
+- invoice processing;
+- security incidents.
 
-| System | Accuracy | p50 (1 client) | p95 (1 client) | req/s (1 client) | p50 (8 clients) | req/s (8 clients) |
-|---|---|---|---|---|---|---|
-| **Dragonfly** (cascade S→M, 1.7B) | 77.1% | **22 ms** | **80 ms** | **40** | **161–190 ms** | **21–44** |
-| Kev-0.8B | 83.1% | 43 ms | 237 ms | 13 | 448 ms | 17 |
-| Kev-4B | **89.2%** | 44 ms | 124 ms | 18 | 573 ms | 13 |
+It's the public benchmark where Jev and Laya publish their numbers.
 
-**What this shows:**
-- **Speed:** Dragonfly is **1.9–2.0× faster than Kev with one client and 2.8–3.0× faster with eight**, at p50.
-- **Accuracy:** Kev is **more accurate**, by 6 points for Kev-0.8B and 12 for Kev-4B. Kev-4B starts from a 4B base
-  model and was trained on far more data (its `decision-v7` and later suites, and hard/devtools sets).
-- **Gap to close:** Dragonfly-M is a 1.7B model trained for 17 minutes on 4,332 questions. More data and a larger
-  tier M are the obvious next steps.
+| System | Trained on this benchmark's train split? | Accuracy | p50 | Source |
+|---|---|---|---|---|
+| **Laya-typed-decisions** (421M) | yes | **76.7%** | 55 ms | measured |
+| **Dragonfly-td** (tier S, 150M) | yes | 73.1% | **47 ms** | measured |
+| Jev 1.13.0 | no | 72.7% | 710 ms (hosted) | published leaderboard |
+| Kev-4B | no | 66.9% | 110 ms | measured |
+| Dragonfly (our general model) | no | 46.1% | 86 ms | measured |
+| Laya (English base) | no | 36.0% | 55 ms | measured |
+| Prior (ignores the input) | - | 47.0% | - | published leaderboard |
 
-**Jev** (TypeSafe, closed) **has not been measured here**: it needs a paid, waitlisted API key. The harness includes
-it automatically when `TYPESAFE_API_KEY` is set:
+**Reading the typed-decisions results:**
+- **Trained on the benchmark (like Laya-typed-decisions):**
+  - Dragonfly-td is **1.2× faster** than Laya-td (47 vs 55 ms) and **3.6 points less accurate** (73.1% vs 76.7%).
+  - Dragonfly-td beats Jev's published score (72.7%) and is **about 15× faster** than Jev's published latency.
+    However, Jev is scored zero-shot there, so this is not like-for-like.
+  - Dragonfly-td is not temperature-calibrated (ECE 0.119), because the benchmark has no calibration split.
+- **Zero-shot (never saw these workflows):**
+  - Kev-4B (66.9%) is the best measured.
+  - Dragonfly's general model (46.1%) is at the prior, so it doesn't transfer to unseen workflows.
+  - Laya's base (36.0%) is below the prior, as its own card says (0.362).
+- **Laya reproduces its published numbers here** (76.7% vs its card's 76.6%; 36.0% vs 36.2%), a good sign that the
+  setup is fair.
+
+### Benchmark 2: decision-v2
+
+200 requests (249 questions) from Kev's suite. Dragonfly trained on its train split, and Kev on the same sources. Kev
+never saw these test questions (checked against every file in its repo).
+
+| System | Accuracy | p50 | p95 | Throughput (1 client) |
+|---|---|---|---|---|
+| **Dragonfly** (cascade S→M) | 77.1% | **21 ms** | 81 ms | **41 req/s** |
+| Kev-4B | **89.2%** | 44 ms alone on the GPU / 71 ms sharing it | 124 / 308 ms | 18 / 10 req/s |
+| Kev-0.8B | 83.1% | 43 ms | 237 ms | 13 req/s |
+| Laya (English base, zero-shot) | 66.3% | 48 ms | 65 ms | 20 req/s |
+
+With 8 clients, Dragonfly was 2.8–3.0× faster than Kev.
+
+### Summary
+
+- **Speed:** Dragonfly is the fastest system we measured, on both benchmarks.
+  - It is **2–3.4× faster than Kev** and **1.2–2.3× faster than Laya**.
+  - Against Jev's *published* hosted latencies (236–710 ms), it is **5–30× faster**.
+- **Accuracy:**
+  - Kev-4B is better on both benchmarks when Dragonfly and Kev are compared like for like.
+  - Laya-typed-decisions is better on its own benchmark.
+  - Dragonfly beats Laya's base model and Jev's published typed-decisions score. It needs its trained variant to beat
+    Jev.
+- **The real gap is generalization.** Kev was trained on far more, and more varied, data. Dragonfly's general model
+  saw only 4,332 questions from 11 sources.
+
+### Jev's published benchmarks
+
+Jev is closed and needs a paid, waitlisted key, so we list what others have **published**, with their conditions:
+
+| Source | What was measured | Jev result |
+|---|---|---|
+| [typed-decisions leaderboard](https://huggingface.co/datasets/LocalLLaMA/typed-decisions) | 400 cases, zero-shot | 72.7% accuracy, Brier 0.148, **710 ms** p50 end to end |
+| [Laya model card](https://huggingface.co/convaiinnovations/laya) | typed-decisions and Banking77 | 72.7% typed-decisions, 87.0% Banking77; **236–276 ms** p50 per question; ECE 0.246 |
+| [Kev README / model cards](https://github.com/jaredpalmer/kev) | Kev's suites | 85.7% (Kev-9B: 85.2%); automates 70% of decisions at 5% error (Kev: 45–57%); confidently wrong on 3.7% |
+| [Opper](https://opper.ai/blog/jev-vs-kev-open-decision-model) | 362 fresh arXiv / Stack Exchange / GitHub questions | about Kev-4B's accuracy (within 2 points); **about 275 ms** (Kev-4B: about 220 ms) |
+| [TypeSafe](https://typesafe.ai/blog/introducing-system-one-models-and-jev) | vendor claim | **70–500 ms**, "20–200× faster" than LLMs writing full answers |
+| [AIMultiple](https://aimultiple.com/decision-models) | 50 browser-agent tasks | 17/50 solved, 4.2 s per attempt (GPT-6 Astra: 47/50) |
+| [Jev 101](https://jev101.org/jev-alternatives) | independent 49-task classifier benchmark | 96.6% (Laya: 58.3%, Von: 70.4%) |
+
+The harness measures Jev directly once you have a key:
 
 ```bash
-TYPESAFE_API_KEY=... python bench/compare_systemone.py --data data/decision-v2/test.jsonl --n 200 \
+TYPESAFE_API_KEY=... python bench/compare_systemone.py --data data/typed-decisions/test.jsonl --n 400 \
   --system dragonfly=http://127.0.0.1:8000@DRAGONFLY_API_KEY --system jev=https://api.typesafe.ai@TYPESAFE_API_KEY
 ```
-
-**Published Jev figures, for orientation only.** They were measured by others, under other conditions, over the
-network:
-- TypeSafe: 70–500 ms end to end.
-- Opper: about 275 ms (Kev-4B through the same gateway: about 220 ms).
-- AIMultiple: 0.33 s median.
-- Accuracy: 85.7%, against Kev-9B's 85.2%, on Kev's suites.
-
-Against those latencies, Dragonfly's local 22 ms p50 would be roughly 3–20× faster. That is **not** a measured
-comparison.
-
-**A benchmark pitfall we hit:** publishing a port on `127.0.0.1` only, then calling `localhost`, cost each request
-about 2 s. The client tried IPv6 first. Use `127.0.0.1` for local benchmarks.
 
 ## Publishing a checkpoint
 

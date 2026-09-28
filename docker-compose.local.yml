@@ -207,6 +207,18 @@ services:
       - hfcache:/models/hf
     <<: *gpu
 
+  # Laya as a benchmark opponent; the request's `model` picks english | multilingual | typed-decisions
+  laya:
+    profiles: [laya]
+    build:
+      context: ./bench/laya
+    container_name: dragonfly-laya
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - hfcache:/models/hf
+    <<: *gpu
+
   # Dragonfly vs an LLM API (set LLM_BASE_URL / LLM_API_KEY / LLM_MODEL in docker/.env).
   bench:
     profiles: [bench]
