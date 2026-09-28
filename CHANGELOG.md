@@ -62,6 +62,17 @@ All notable changes to this project. The plugin API (`dragonfly.plugins.api.API_
   - 10.4 s of speech in 71 ms, against Whisper large-v3-turbo at 551 ms (7.8×), with identical words.
 - 200× against a hosted frontier API has not been measured (it needs a key).
 
+### Benchmark vs Kev and Jev
+- `bench/compare_systemone.py` runs any number of `/v1/systemone` servers on identical labelled requests. Jev is
+  included when `TYPESAFE_API_KEY` is set.
+- Kev is served from its repo at a pinned commit (`bench/kev/Dockerfile`, compose profile `kev`).
+- Results on the same GPU and 200 test requests:
+  - Dragonfly: 77.1% at 22 ms p50;
+  - Kev-0.8B: 83.1% at 43 ms;
+  - Kev-4B: 89.2% at 44 ms.
+- So Dragonfly is about 2× faster (about 3× at 8 clients) and less accurate. Kev never trained on these test questions
+  (checked against every data file in its repo).
+
 ### Serving
 - Tier M: LoRA merged into the weights at load (identical output). CUDA-graph buckets up to 64 rows. Warm-up capture
   at startup, which took p95 from 365 to 38 ms.

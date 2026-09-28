@@ -66,6 +66,17 @@ TypeSafe and Kev clients work by changing `base_url`.
 | Image → decision (OCR + tags + answer) | 71–104 ms | Qwen2.5-VL-7B: 2.2–3.0 s | **22–39× faster**, same answers |
 | 10.4 s speech → text | 71 ms | Whisper large-v3-turbo: 551 ms | **7.8× faster**, same words |
 
+**Versus Kev on the same GPU and the same 200 test requests** (`bench/compare_systemone.py`):
+
+| | Dragonfly | Kev-0.8B | Kev-4B |
+|---|---|---|---|
+| Accuracy | 77.1% | 83.1% | **89.2%** |
+| p50 latency (1 client) | **22 ms** | 43 ms | 44 ms |
+| Throughput (8 clients) | **21–44 req/s** | 17 req/s | 13 req/s |
+
+Dragonfly is **about 2× faster than Kev (about 3× under load)**, but Kev is more accurate: it's a bigger, longer-trained
+model. **Jev isn't measured yet:** it needs a TypeSafe API key, and the harness runs it once `TYPESAFE_API_KEY` is set.
+
 **Honest note on "200×":**
 - Measured locally, Dragonfly is 55–105× faster than LLMs that reason, and more accurate.
 - 200× is what Jev reports against hosted frontier models (3–329 s per answer, network included). We haven't measured

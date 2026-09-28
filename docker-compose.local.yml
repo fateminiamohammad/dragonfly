@@ -193,6 +193,20 @@ services:
       - ollamadata:/root/.ollama
     <<: *gpu
 
+  # Kev as a benchmark opponent (bench/compare_systemone.py): KEV_MODEL=jaredpalmer/kev-0.8b | kev-4b | kev-9b
+  kev:
+    profiles: [kev]
+    build:
+      context: ./bench/kev
+    container_name: dragonfly-kev
+    environment:
+      KEV_MODEL: ${KEV_MODEL:-jaredpalmer/kev-4b}
+    ports:
+      - "127.0.0.1:8009:8009"
+    volumes:
+      - hfcache:/models/hf
+    <<: *gpu
+
   # Dragonfly vs an LLM API (set LLM_BASE_URL / LLM_API_KEY / LLM_MODEL in docker/.env).
   bench:
     profiles: [bench]

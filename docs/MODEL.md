@@ -193,6 +193,51 @@ configuration: distilled tier S plus tier M, cascade threshold 0.45.
 
 Raw results: `runs/compare-llm-*.json`.
 
+## Versus Kev and Jev
+
+`bench/compare_systemone.py` sends byte-identical `/v1/systemone` requests to every system and scores them against
+the same labels.
+
+**Test data:** 200 decision-v2 test requests (249 questions), with 30 warm-up requests excluded. Kev never trained on
+these questions: we checked every data file in Kev's repo, and the overlaps are only Kev's own *test* splits.
+
+**Setup:** everything runs on the same RTX 3090 Ti. Kev is served exactly as its README says (`kev.serve`: bf16, CUDA
+graphs, fused Qwen3.5 kernels), from its repo at a pinned commit (`bench/kev/Dockerfile`, compose profile `kev`).
+
+| System | Accuracy | p50 (1 client) | p95 (1 client) | req/s (1 client) | p50 (8 clients) | req/s (8 clients) |
+|---|---|---|---|---|---|---|
+| **Dragonfly** (cascade S→M, 1.7B) | 77.1% | **22 ms** | **80 ms** | **40** | **161–190 ms** | **21–44** |
+| Kev-0.8B | 83.1% | 43 ms | 237 ms | 13 | 448 ms | 17 |
+| Kev-4B | **89.2%** | 44 ms | 124 ms | 18 | 573 ms | 13 |
+
+**What this shows:**
+- **Speed:** Dragonfly is **1.9–2.0× faster than Kev with one client and 2.8–3.0× faster with eight**, at p50.
+- **Accuracy:** Kev is **more accurate**, by 6 points for Kev-0.8B and 12 for Kev-4B. Kev-4B starts from a 4B base
+  model and was trained on far more data (its `decision-v7` and later suites, and hard/devtools sets).
+- **Gap to close:** Dragonfly-M is a 1.7B model trained for 17 minutes on 4,332 questions. More data and a larger
+  tier M are the obvious next steps.
+
+**Jev** (TypeSafe, closed) **has not been measured here**: it needs a paid, waitlisted API key. The harness includes
+it automatically when `TYPESAFE_API_KEY` is set:
+
+```bash
+TYPESAFE_API_KEY=... python bench/compare_systemone.py --data data/decision-v2/test.jsonl --n 200 \
+  --system dragonfly=http://127.0.0.1:8000@DRAGONFLY_API_KEY --system jev=https://api.typesafe.ai@TYPESAFE_API_KEY
+```
+
+**Published Jev figures, for orientation only.** They were measured by others, under other conditions, over the
+network:
+- TypeSafe: 70–500 ms end to end.
+- Opper: about 275 ms (Kev-4B through the same gateway: about 220 ms).
+- AIMultiple: 0.33 s median.
+- Accuracy: 85.7%, against Kev-9B's 85.2%, on Kev's suites.
+
+Against those latencies, Dragonfly's local 22 ms p50 would be roughly 3–20× faster. That is **not** a measured
+comparison.
+
+**A benchmark pitfall we hit:** publishing a port on `127.0.0.1` only, then calling `localhost`, cost each request
+about 2 s. The client tried IPv6 first. Use `127.0.0.1` for local benchmarks.
+
 ## Publishing a checkpoint
 
 ```bash

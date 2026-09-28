@@ -34,9 +34,13 @@ Every model in the request path is **non-autoregressive**: one forward pass, wit
 | Images and audio (perception-service) | done: CTC speech (en/fa), PP-OCR, SigLIP-2 tags; 22–39× faster than Qwen2.5-VL-7B, 7.8× faster than Whisper-turbo |
 | Backend, UI (Media page), keys and usage via Redis, plugins (Python + gRPC) | done, verified end to end (`scripts/e2e_media.py`) |
 | CI and GHCR publishing | green |
+| vs Kev (same GPU, same requests; `bench/compare_systemone.py`) | Dragonfly **about 2× faster** (about 3× at 8 clients) but **less accurate**: 77.1% vs Kev-0.8B 83.1%, Kev-4B 89.2% |
+| vs Jev | **not measured**: needs `TYPESAFE_API_KEY` (the harness supports it) |
 | **200× vs GPT** | **not measured**: no hosted-API key. Local thinking LLM measured at 105×. |
 
 **Next steps:**
+0. Close the accuracy gap to Kev: more training data (Kev's decision-v7 and hard/devtools suites) and a larger tier M
+   (Qwen3-4B).
 1. Measure against a hosted frontier API (set `LLM_*`, run `bench/compare_llm.py`).
 2. Publish checkpoints (`scripts/publish_hf.py`, needs `huggingface-cli login`).
 3. Make the GHCR packages public and tag `v0.1.0`.
@@ -59,6 +63,7 @@ Every model in the request path is **non-autoregressive**: one forward pass, wit
 | model-service | 8000 | also direct; `/metrics` for Prometheus |
 | perception-service | 8001 (internal) | reached through model-service `/v1/perceive` or media in the state |
 | llm (Ollama) | 127.0.0.1:11434 | `llm` profile, only for benchmarks (qwen2.5:7b-instruct, qwen2.5vl:7b, qwen3:8b pulled) |
+| kev | 127.0.0.1:8009 | `kev` profile, benchmark opponent; `KEV_MODEL=jaredpalmer/kev-0.8b|kev-4b|kev-9b`; call it via `127.0.0.1`, not `localhost` |
 | backend | 3000 (internal) | reached through nginx `/api` |
 | ui | 80 (internal) | reached through nginx `/` |
 | postgres | 5434 → 5432 | |
