@@ -157,6 +157,7 @@ python scripts/e2e_media.py --password <ADMIN_PASSWORD>                         
 ## Documentation
 
 - [README.md](README.md): overview, quick start, first results
+- [docs/ALGORITHM.md](docs/ALGORITHM.md): how it works, visually (Mermaid diagrams plus the tier M mask SVG)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): services, hot path, model design, cascade, calibration
 - [docs/MODEL.md](docs/MODEL.md): tiers, data, training/calibration/eval commands, metrics, results, speed
 - [docs/API.md](docs/API.md): `/v1` and `/api` endpoints, request and response shapes, errors, key and usage flow

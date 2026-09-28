@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 550" width="900" height="550" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Dragonfly-M: one packed sequence and its attention mask</title>
+  <rect width="900" height="550" fill="#ffffff"/>
+
+  <!-- ===== left: the packed sequence ===== -->
+  <text x="24" y="34" font-size="17" font-weight="600" fill="#16181d">One request = one packed sequence</text>
+  <text x="24" y="56" font-size="12.5" fill="#5d6470">positions shown under each block</text>
+
+  <!-- state -->
+  <rect x="24" y="76" width="130" height="44" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="89" y="103" font-size="13" text-anchor="middle" fill="#16181d">state (document)</text>
+  <text x="89" y="138" font-size="11.5" text-anchor="middle" fill="#5d6470">pos 0 … s</text>
+
+  <!-- question 1 -->
+  <rect x="164" y="76" width="92" height="44" rx="6" fill="#d8f0ec" stroke="#0f7b6c"/>
+  <text x="210" y="103" font-size="13" text-anchor="middle" fill="#16181d">question 1</text>
+  <text x="210" y="138" font-size="11.5" text-anchor="middle" fill="#5d6470">s+1 … q</text>
+
+  <!-- options of q1: same start -->
+  <rect x="266" y="76" width="70" height="44" rx="6" fill="#fdebd3" stroke="#c77700"/>
+  <text x="301" y="103" font-size="13" text-anchor="middle" fill="#16181d">opt A</text>
+  <rect x="346" y="76" width="70" height="44" rx="6" fill="#fdebd3" stroke="#c77700"/>
+  <text x="381" y="103" font-size="13" text-anchor="middle" fill="#16181d">opt B</text>
+  <text x="341" y="138" font-size="11.5" text-anchor="middle" fill="#b35f00" font-weight="600">both start at q+1</text>
+
+  <!-- question 2 -->
+  <rect x="426" y="76" width="92" height="44" rx="6" fill="#d8f0ec" stroke="#0f7b6c"/>
+  <text x="472" y="103" font-size="13" text-anchor="middle" fill="#16181d">question 2</text>
+  <text x="472" y="138" font-size="11.5" text-anchor="middle" fill="#5d6470">also s+1 …</text>
+
+  <rect x="528" y="76" width="70" height="44" rx="6" fill="#fdebd3" stroke="#c77700"/>
+  <text x="563" y="103" font-size="13" text-anchor="middle" fill="#16181d">opt C</text>
+
+  <!-- pointer head annotation -->
+  <text x="24" y="178" font-size="13" fill="#16181d">Pointer head: <tspan font-weight="600">score(option) = q · k / √d</tspan>, then softmax over each question's options</text>
+  <text x="24" y="198" font-size="12.5" fill="#5d6470">q = last token of the question · k = last token of each option · one forward pass answers every question</text>
+
+  <!-- ===== right: the mask matrix ===== -->
+  <text x="24" y="246" font-size="17" font-weight="600" fill="#16181d">Attention mask (row = token looking, column = token seen)</text>
+
+  <!-- column labels -->
+  <g font-size="12" fill="#16181d" text-anchor="middle">
+    <text x="175" y="282">state</text><text x="245" y="282">Q1</text><text x="315" y="282">A</text>
+    <text x="385" y="282">B</text><text x="455" y="282">Q2</text><text x="525" y="282">C</text>
+  </g>
+  <!-- row labels -->
+  <g font-size="12" fill="#16181d" text-anchor="end">
+    <text x="130" y="318">state</text><text x="130" y="358">Q1</text><text x="130" y="398">opt A</text>
+    <text x="130" y="438">opt B</text><text x="130" y="478">Q2</text><text x="130" y="518">opt C</text>
+  </g>
+
+  <!-- grid cells: 6x6, cell 70x40 starting at x=140,y=292. green=can see, grey=blocked -->
+  <g stroke="#ffffff" stroke-width="2">
+    <!-- row state: sees state only (causal within) -->
+    <rect x="140" y="292" width="70" height="40" fill="#0f7b6c"/><rect x="210" y="292" width="70" height="40" fill="#e2e5ea"/><rect x="280" y="292" width="70" height="40" fill="#e2e5ea"/><rect x="350" y="292" width="70" height="40" fill="#e2e5ea"/><rect x="420" y="292" width="70" height="40" fill="#e2e5ea"/><rect x="490" y="292" width="70" height="40" fill="#e2e5ea"/>
+    <!-- row Q1: state + itself -->
+    <rect x="140" y="332" width="70" height="40" fill="#0f7b6c"/><rect x="210" y="332" width="70" height="40" fill="#0f7b6c"/><rect x="280" y="332" width="70" height="40" fill="#e2e5ea"/><rect x="350" y="332" width="70" height="40" fill="#e2e5ea"/><rect x="420" y="332" width="70" height="40" fill="#e2e5ea"/><rect x="490" y="332" width="70" height="40" fill="#e2e5ea"/>
+    <!-- row A: state + Q1 + itself (NOT B) -->
+    <rect x="140" y="372" width="70" height="40" fill="#0f7b6c"/><rect x="210" y="372" width="70" height="40" fill="#0f7b6c"/><rect x="280" y="372" width="70" height="40" fill="#0f7b6c"/><rect x="350" y="372" width="70" height="40" fill="#e2e5ea"/><rect x="420" y="372" width="70" height="40" fill="#e2e5ea"/><rect x="490" y="372" width="70" height="40" fill="#e2e5ea"/>
+    <!-- row B: state + Q1 + itself (NOT A) -->
+    <rect x="140" y="412" width="70" height="40" fill="#0f7b6c"/><rect x="210" y="412" width="70" height="40" fill="#0f7b6c"/><rect x="280" y="412" width="70" height="40" fill="#f4c7c3"/><rect x="350" y="412" width="70" height="40" fill="#0f7b6c"/><rect x="420" y="412" width="70" height="40" fill="#e2e5ea"/><rect x="490" y="412" width="70" height="40" fill="#e2e5ea"/>
+    <!-- row Q2: state + itself (NOT Q1, A, B) -->
+    <rect x="140" y="452" width="70" height="40" fill="#0f7b6c"/><rect x="210" y="452" width="70" height="40" fill="#f4c7c3"/><rect x="280" y="452" width="70" height="40" fill="#f4c7c3"/><rect x="350" y="452" width="70" height="40" fill="#f4c7c3"/><rect x="420" y="452" width="70" height="40" fill="#0f7b6c"/><rect x="490" y="452" width="70" height="40" fill="#e2e5ea"/>
+    <!-- row C: state + Q2 + itself -->
+    <rect x="140" y="492" width="70" height="40" fill="#0f7b6c"/><rect x="210" y="492" width="70" height="40" fill="#f4c7c3"/><rect x="280" y="492" width="70" height="40" fill="#f4c7c3"/><rect x="350" y="492" width="70" height="40" fill="#f4c7c3"/><rect x="420" y="492" width="70" height="40" fill="#0f7b6c"/><rect x="490" y="492" width="70" height="40" fill="#0f7b6c"/>
+  </g>
+
+  <!-- legend -->
+  <g font-size="12.5" fill="#16181d">
+    <rect x="600" y="300" width="16" height="16" fill="#0f7b6c"/><text x="624" y="313">can see</text>
+    <rect x="600" y="328" width="16" height="16" fill="#f4c7c3"/><text x="624" y="341">blocked on purpose (isolation)</text>
+    <rect x="600" y="356" width="16" height="16" fill="#e2e5ea"/><text x="624" y="369">in the future (causal)</text>
+  </g>
+  <g font-size="12.5" fill="#16181d">
+    <text x="600" y="408" font-weight="600">Why this matters</text>
+    <text x="600" y="430">• the document is read once, shared by all</text>
+    <text x="600" y="450">• questions can't leak into each other</text>
+    <text x="600" y="470">• options can't see each other and share</text>
+    <text x="612" y="488">positions → reordering can't change scores</text>
+    <text x="612" y="506">(Kev flips ~7%; Dragonfly-M 0.86%, bf16)</text>
+  </g>
+</svg>

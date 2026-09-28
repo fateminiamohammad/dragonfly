@@ -84,6 +84,47 @@ model. **Jev isn't measured yet:** it needs a TypeSafe API key, and the harness 
 
 Details: [docs/MODEL.md](docs/MODEL.md) and [docs/PERCEPTION.md](docs/PERCEPTION.md).
 
+## How it works
+
+An LLM **writes** its answer token by token. Dragonfly **scores every possible answer at once**, in one forward pass:
+
+```mermaid
+flowchart LR
+    subgraph LLM["LLM: autoregressive"]
+        direction LR
+        A1[read prompt] --> A2[token 1] --> A3[token 2] --> A4["… token N"] --> A5[parse answer]
+    end
+    subgraph DF["Dragonfly: one pass"]
+        direction LR
+        B1["read state + questions<br/>+ all options together"] --> B2["score every option"] --> B3["probability for<br/>every answer"]
+    end
+```
+
+A request goes to the fast model first. Only the questions it is unsure about go to the bigger one:
+
+```mermaid
+flowchart LR
+    R([request]) --> P{"images or audio?"}
+    P -- yes --> PC["perception-service<br/>speech/OCR/tags → text"] --> S
+    P -- no --> S["tier S · ModernBERT<br/>≈ 8 ms"]
+    S --> C{"confidence ≥ 0.45?"}
+    C -- "yes (64.5%)" --> A([answers + probabilities])
+    C -- "no (35.5%)" --> M["tier M · Qwen3 + LoRA<br/>≈ 20 ms"] --> A
+```
+
+Tier M answers a whole request in **one packed sequence**. The attention mask lets it read the document once and keeps
+questions and options from seeing each other, so reordering the options can't change the answer:
+
+![Tier M packed sequence and attention mask](docs/images/tier-m-mask.svg)
+
+**The full walkthrough with diagrams:** [docs/ALGORITHM.md](docs/ALGORITHM.md). It covers:
+- the one-primitive design;
+- both model tiers;
+- the cascade;
+- calibration and distillation;
+- image and audio perception;
+- CUDA graphs.
+
 ## Models
 
 | Tier | Model | Role |
@@ -218,6 +259,7 @@ See [docs/PLUGINS.md](docs/PLUGINS.md), [plugins/example-python](plugins/example
 
 | Doc | Covers |
 |---|---|
+| [docs/ALGORITHM.md](docs/ALGORITHM.md) | **how it works, visually**: diagrams of every step |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | services, hot path, model design, cascade, calibration |
 | [docs/MODEL.md](docs/MODEL.md) | tiers, data, training and evaluation, metrics, results, speed |
 | [docs/API.md](docs/API.md) | `/v1` and `/api` endpoints, request and response shapes, errors |

@@ -1,5 +1,7 @@
 # Architecture
 
+For a visual, step-by-step explanation of the algorithm, see [ALGORITHM.md](ALGORITHM.md).
+
 ```
                     ┌──────────── nginx (edge, TLS) ─────────────┐
  clients / SDKs ──► │ /v1/*  → model-service   (hot path, direct)│
