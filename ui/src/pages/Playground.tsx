@@ -66,6 +66,7 @@ export function Playground() {
       return;
     }
     setBusy(true);
+    setResult(null); // don't leave the previous answers on screen while this request runs
     const t = performance.now();
     try {
       setResult(await api<DecideResponse>('/model/playground', { method: 'POST', body: JSON.stringify(body) }));
