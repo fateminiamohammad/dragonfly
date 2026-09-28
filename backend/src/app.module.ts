@@ -16,6 +16,7 @@ import { KeysService } from './keys/keys.service';
 import { ModelController } from './model/model.controller';
 import { RedisService } from './redis/redis.service';
 import { ReviewController } from './review/review.controller';
+import { SpecialistsController } from './specialists/specialists.controller';
 import { UsageController } from './usage/usage.controller';
 
 @Module({
@@ -28,7 +29,7 @@ import { UsageController } from './usage/usage.controller';
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
   ],
-  controllers: [HealthController, AuthController, KeysController, UsageController, ModelController, ReviewController],
+  controllers: [HealthController, AuthController, KeysController, UsageController, ModelController, ReviewController, SpecialistsController],
   providers: [
     AuthService,
     KeysService,

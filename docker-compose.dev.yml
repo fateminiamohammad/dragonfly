@@ -84,6 +84,26 @@ services:
       retries: 10
       start_period: 300s
 
+  # Trains the specialists users upload in the UI (docs/SWARM.md). Holds GPU memory only while a job runs.
+  trainer-worker:
+    build:
+      context: ./model-service
+      target: runtime
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+    container_name: dragonfly-trainer-worker
+    env_file: docker/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+    volumes:
+      - ./runs:/runs
+      - hfcache:/models/hf
+    <<: *gpu
+    command: dragonfly-worker
+    depends_on:
+      redis: { condition: service_healthy }
+
   backend:
     build:
       context: ./backend
@@ -96,6 +116,8 @@ services:
       MODEL_SERVICE_URL: http://model-service:8000
     restart: unless-stopped
     expose: ["3000"]
+    volumes:
+      - ./runs/uploads:/runs/uploads   # specialist training uploads, read by trainer-worker
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

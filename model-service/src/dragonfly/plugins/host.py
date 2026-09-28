@@ -70,13 +70,27 @@ class PluginHost:
             log.exception("plugin %s failed in %s; skipped (fail_open)", plugin.name, hook)
             return fallback
 
+    def _slots(self, plugin: Plugin) -> asyncio.Semaphore | None:
+        if not getattr(plugin, "max_concurrency", None):
+            return None
+        slots = getattr(self, "_semaphores", None)
+        if slots is None:
+            slots = self._semaphores = {}
+        if id(plugin) not in slots:
+            slots[id(plugin)] = asyncio.Semaphore(plugin.max_concurrency)
+        return slots[id(plugin)]
+
     async def _acall(self, plugin: Plugin, hook: str, fallback, *args):
         """Like _call, but a `blocking` plugin runs in a worker thread with its time budget, so a slow LLM or HTTP call
         never stalls the event loop (and with it every other request)."""
         if not plugin.blocking:
             return self._call(plugin, hook, fallback, *args)
+        slots = self._slots(plugin)
         try:
-            return await asyncio.wait_for(asyncio.to_thread(getattr(plugin, hook), *args), timeout=plugin.timeout_s)
+            if slots is None:
+                return await asyncio.wait_for(asyncio.to_thread(getattr(plugin, hook), *args), timeout=plugin.timeout_s)
+            async with slots:  # queueing here does not count against the plugin's time budget
+                return await asyncio.wait_for(asyncio.to_thread(getattr(plugin, hook), *args), timeout=plugin.timeout_s)
         except PluginError:
             raise
         except Exception as e:

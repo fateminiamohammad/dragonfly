@@ -62,6 +62,12 @@ TypeSafe-compatible: the TypeSafe and Kev SDKs work by pointing their base URL a
 | 4xx from a plugin | a plugin rejected the request, e.g. 413 for an oversized state |
 | 500 | a fail-closed plugin errored |
 
+### Specialists (the swarm)
+
+With `DRAGONFLY_SPECIALISTS` set, `model` selects a specialist by name, or `"auto"` to let the general model route.
+`dragonfly-latest` (and the SDK defaults `jev-latest`, `kev-latest`) is the general model. The response then carries
+`"specialist": "<name>" | "general"`, and an unknown model name is a 422. See [SWARM](SWARM.md).
+
 ### Images and audio in the state
 
 Any object `{"type": "image" | "audio", "data": "<base64>"}` inside `state` is converted to text before the decision:
@@ -86,6 +92,7 @@ Status codes:
 | Endpoint | Auth | Returns |
 |---|---|---|
 | `GET /v1/models` | key | model card: tier(s), backbone, trained, temperature, device, CUDA-graph, cache and batch stats, plugins |
+| `GET /v1/specialists` | key | the swarm's specialists: name, description, tier, metrics, loaded, requests served ([SWARM](SWARM.md)) |
 | `GET /health` | none | `{"status": "ok", "version", "trained"}` |
 | `GET /metrics` | none (internal network only) | Prometheus metrics |
 
@@ -106,6 +113,13 @@ Every route except `/api/health` and `/api/auth/login` needs `Authorization: Bea
 | `GET /api/model` | any | proxies `/v1/models` |
 | `POST /api/model/playground` | any, 120/min | proxies `/v1/systemone` with the internal key |
 | `POST /api/model/perceive` | any, 60/min | proxies `/v1/perceive` (images/audio → text); JSON bodies up to 30 MB |
+| `GET /api/review?limit=50` | any | the human-review queue: pending and reviewed counts, items with their answer options |
+| `POST /api/review/:id` `{label}` | any | label an item (moves it to the reviewed list) |
+| `POST /api/review/:id/skip` | any | drop an item without labelling it |
+| `GET /api/review/export` | any | reviewed items as training JSONL |
+| `GET /api/specialists` | any | the swarm's specialists (from `/v1/specialists`) and the 20 latest training jobs with progress |
+| `POST /api/specialists` `{name, description, tier, format: csv\|jsonl, data, question?, epochs?}` | any, 10/min | validate an upload and queue a training job ([SWARM](SWARM.md#train-your-own-ui--specialist-in-minutes)) |
+| `DELETE /api/specialists/:name` | admin | remove a specialist (every replica reloads) |
 
 ## How keys and usage flow
 

@@ -29,6 +29,7 @@ dragonfly-serve = "dragonfly.api.serve:main"
 dragonfly-train = "dragonfly.training.train:main"
 dragonfly-eval = "dragonfly.training.evaluate:main"
 dragonfly-calibrate = "dragonfly.training.calibrate:main"
+dragonfly-worker = "dragonfly.worker:main"
 
 # free plugins that ship with Dragonfly (enable by name in DRAGONFLY_PLUGINS)
 [project.entry-points."dragonfly.plugins"]

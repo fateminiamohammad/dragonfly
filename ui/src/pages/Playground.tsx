@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type DecideResponse } from '../api';
 import { headline, pct, topOptions } from '../format';
 import { fileToBase64, mediaType } from './Media';
@@ -34,6 +34,34 @@ export function Playground() {
   const [roundTrip, setRoundTrip] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+
+  // the swarm's specialists (plus "auto"), so a request can be sent to one
+  useEffect(() => {
+    api<{ models: { name: string; specialist?: boolean }[] }>('/model')
+      .then((r) => setModels(r.models.filter((m) => m.specialist || m.name === 'auto').map((m) => m.name)))
+      .catch(() => setModels([]));
+  }, []);
+
+  /** The model field of the request JSON ("dragonfly-latest" when absent). */
+  function currentModel(): string {
+    try {
+      return JSON.parse(text).model ?? 'dragonfly-latest';
+    } catch {
+      return 'dragonfly-latest';
+    }
+  }
+
+  function chooseModel(model: string) {
+    try {
+      const body = JSON.parse(text);
+      if (model === 'dragonfly-latest') delete body.model;
+      else body.model = model;
+      setText(JSON.stringify(body, null, 2));
+    } catch (e) {
+      setError(`Fix the request JSON first: ${(e as Error).message}`);
+    }
+  }
 
   /** Put an image/audio file into the request's state as a media object; the server converts it to text. */
   async function attach(file: File | undefined) {
@@ -84,6 +112,17 @@ export function Playground() {
         <div className="row">
           <h2>Request</h2>
           <span className="muted small">POST /v1/systemone</span>
+          <span className="grow" />
+          {models.length > 0 && (
+            <select className="model-select" value={currentModel()} onChange={(e) => chooseModel(e.target.value)} aria-label="model">
+              <option value="dragonfly-latest">general model</option>
+              {models.map((m) => (
+                <option key={m} value={m}>
+                  {m === 'auto' ? 'auto (route to a specialist)' : `specialist: ${m}`}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <textarea spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} aria-label="request JSON" />
         <div className="row">
@@ -107,6 +146,7 @@ export function Playground() {
               model {result.latency_ms.toFixed(1)} ms{result.cached ? ' (cached)' : ''}
               {result.usage.media_ms ? ` · media ${result.usage.media_ms.toFixed(0)} ms` : ''} · round trip{' '}
               {roundTrip?.toFixed(0)} ms · {result.usage.input_tokens} tokens
+              {result.specialist ? ` · answered by ${result.specialist}` : ''}
             </span>
           )}
         </div>

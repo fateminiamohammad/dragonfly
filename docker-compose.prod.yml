@@ -78,6 +78,22 @@ services:
       retries: 10
       start_period: 300s
 
+  # Trains the specialists users upload in the UI (docs/SWARM.md). Holds GPU memory only while a job runs.
+  trainer-worker:
+    image: ${MODEL_IMAGE:?set MODEL_IMAGE to ghcr.io/<owner>/dragonfly-model-service:<sha>}
+    container_name: dragonfly-trainer-worker
+    env_file: docker/${ENV_FILE_NAME:-.env}
+    environment:
+      REDIS_URL: redis://redis:6379
+    restart: unless-stopped
+    volumes:
+      - ./runs:/runs
+      - hfcache:/models/hf
+    <<: *gpu
+    command: dragonfly-worker
+    depends_on:
+      redis: { condition: service_healthy }
+
   backend:
     image: ${BACKEND_IMAGE:?set BACKEND_IMAGE to ghcr.io/<owner>/dragonfly-backend:<sha>}
     container_name: dragonfly-backend
@@ -88,6 +104,8 @@ services:
       MODEL_SERVICE_URL: http://model-service:8000
     restart: unless-stopped
     expose: ["3000"]
+    volumes:
+      - ./runs/uploads:/runs/uploads   # specialist training uploads, read by trainer-worker
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

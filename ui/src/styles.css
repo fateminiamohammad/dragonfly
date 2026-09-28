@@ -66,7 +66,8 @@ a {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
@@ -93,7 +94,8 @@ button.primary {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -399,4 +401,41 @@ pre.ocr {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.specialists {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.specialist p {
+  margin: 8px 0;
+}
+.specialist-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+.specialist-stats div {
+  display: grid;
+  gap: 2px;
+}
+.train-form {
+  display: grid;
+  gap: 12px;
+  max-width: 640px;
+}
+.job {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 2fr);
+}
+.job .bar-value {
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-select {
+  width: auto;
 }

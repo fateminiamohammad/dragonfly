@@ -69,17 +69,34 @@ def loss_fn(logits: torch.Tensor, rows: list[dict]) -> torch.Tensor:
     return torch.stack(losses).mean()
 
 
-def train(args) -> dict:
+def train(args, progress=None) -> dict:
+    """progress(step, total, running_loss) is called every --log-every steps (the trainer worker reports it)."""
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = args.device or default_device()
-    tokenizer = AutoTokenizer.from_pretrained(args.backbone)
-    config = CheckpointConfig(tier=args.tier, backbone=args.backbone, head_dim=args.head_dim, max_length=args.max_length,
-                              lora_r=args.lora_r, lora_alpha=2 * args.lora_r, head_norm=not args.no_head_norm)
-    model = build_model(config, load_backbone(args.backbone, args.tier, device))
+    if getattr(args, "init", None):
+        # warm start from a trained checkpoint (a specialist starts from the general model): same tier, backbone
+        # and head; M keeps its LoRA adapters unmerged so they continue training
+        engine = Engine.load(args.init, device, merge=False)
+        config, model = engine.config, engine.model
+        if config.tier != args.tier:
+            raise ValueError(f"--init {args.init} is tier {config.tier}, not {args.tier}")
+        config.max_length, config.trained, config.temperature = args.max_length, False, 1.0
+        if config.tier == "S":
+            model.requires_grad_(True)
+        else:
+            for name, p in model.named_parameters():
+                p.requires_grad_(".lora_" in name or name.startswith("head."))
+        model.train()
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.backbone)
+        config = CheckpointConfig(tier=args.tier, backbone=args.backbone, head_dim=args.head_dim,
+                                  max_length=args.max_length, lora_r=args.lora_r, lora_alpha=2 * args.lora_r,
+                                  head_norm=not args.no_head_norm)
+        model = build_model(config, load_backbone(args.backbone, args.tier, device))
+        engine = Engine(model, tokenizer, config, device)
     if args.grad_checkpointing:
         model.backbone.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-    engine = Engine(model, tokenizer, config, device)
 
     rows, states = fitting(engine, *question_rows(load_records(args.train)))
     log.info("tier %s: training on %d questions, device=%s", args.tier, len(rows), device)
@@ -116,6 +133,8 @@ def train(args) -> dict:
             if step % args.log_every == 0:
                 log.info("epoch %d step %d/%d loss %.4f (running avg %.4f) (%.0fs)", epoch + 1, step, total, loss.item(),
                          ema, time.time() - started)
+                if progress is not None:
+                    progress(step, total, ema)
     model.eval()
 
     if args.calibration:
@@ -142,6 +161,7 @@ def main() -> None:
     ap.add_argument("--test", help="JSONL to evaluate after training")
     ap.add_argument("--out", default="runs/dragonfly-s")
     ap.add_argument("--tier", choices=["S", "M"], default="S")
+    ap.add_argument("--init", help="warm start from a trained checkpoint of the same tier (e.g. runs/dragonfly-s2)")
     ap.add_argument("--backbone", default="answerdotai/ModernBERT-base",
                     help="S: an encoder such as answerdotai/ModernBERT-base; M: a decoder such as Qwen/Qwen3-1.7B-Base")
     ap.add_argument("--head-dim", type=int, default=256)

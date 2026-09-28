@@ -16,6 +16,9 @@ Configuration is by environment (see docker/.env.example):
   PERCEPTION_URL           optional: perception-service base URL; enables images and audio in the state
   DRAGONFLY_PLUGINS        comma-separated plugin names to load
   DRAGONFLY_MAX_BATCH      requests per forward pass (default 64)
+  DRAGONFLY_SPECIALISTS    optional folder of specialists (docs/SWARM.md); requests pick one with "model"
+  DRAGONFLY_SWARM_MAX_LOADED   tier S specialists kept in VRAM at once (default 4, least recently used unloaded)
+  DRAGONFLY_ROUTE_THRESHOLD    "model": "auto" uses a specialist only above this router confidence (default 0.5)
   DRAGONFLY_HOST / DRAGONFLY_PORT   bind address (default 0.0.0.0:8000)
 """
 
@@ -23,6 +26,9 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
+from pathlib import Path
 
 import torch
 import uvicorn
@@ -33,13 +39,15 @@ from ..cache import AnswerCache
 from ..engine import Cascade, Engine
 from ..media import MediaResolver
 from ..plugins import PluginHost
+from ..swarm import AdapterBank, Swarm, read_card
 from .app import create_app
 
 log = logging.getLogger("dragonfly.serve")
+RELOAD_CHANNEL = "dragonfly:specialists"
 
 
-def load_engine(path: str, device: str | None) -> Engine:
-    engine = Engine.load(path, device)
+def load_engine(path: str, device: str | None, merge: bool = True) -> Engine:
+    engine = Engine.load(path, device, merge=merge)
     if os.environ.get("DRAGONFLY_CUDA_GRAPHS", "1") == "1":
         engine.enable_cuda_graphs()
         if os.environ.get("DRAGONFLY_WARMUP", "1") == "1":
@@ -51,15 +59,57 @@ def load_engine(path: str, device: str | None) -> Engine:
     return engine
 
 
+def has_m_specialists(root: Path) -> bool:
+    if not root.is_dir():
+        return False
+    for folder in root.iterdir():
+        try:
+            card = read_card(folder)
+        except (OSError, ValueError, KeyError):
+            continue
+        if card is not None and card["tier"] == "M":
+            return True
+    return False
+
+
+def listen_for_reloads(url: str, swarm: Swarm) -> None:
+    """The backend publishes on dragonfly:specialists when a specialist is added or removed (all replicas reload)."""
+    import redis
+
+    def run():
+        while True:
+            try:
+                pubsub = redis.Redis.from_url(url).pubsub(ignore_subscribe_messages=True)
+                pubsub.subscribe(RELOAD_CHANNEL)
+                for _ in pubsub.listen():
+                    swarm.request_reload()
+            except Exception as e:  # Redis restarts must not end reloads for good
+                log.warning("specialist reload listener: %s; retrying", e)
+                time.sleep(5)
+
+    threading.Thread(target=run, name="dragonfly-swarm-reload", daemon=True).start()
+
+
 def build_app():
     logging.basicConfig(level=os.environ.get("DRAGONFLY_LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
     device = os.environ.get("DRAGONFLY_DEVICE") or None
+    specialists = os.environ.get("DRAGONFLY_SPECIALISTS")
     engine = load_engine(os.environ.get("DRAGONFLY_CHECKPOINT", "base:answerdotai/ModernBERT-base"), device)
+    bank = None
     if os.environ.get("DRAGONFLY_CHECKPOINT_M"):
-        engine = Cascade(engine, load_engine(os.environ["DRAGONFLY_CHECKPOINT_M"], device),
-                         float(os.environ.get("DRAGONFLY_CASCADE_THRESHOLD", "0.8")))
+        # tier M adapters share the M backbone, which then stays unmerged so adapters can be switched in place
+        adapters = specialists is not None and has_m_specialists(Path(specialists))
+        large = load_engine(os.environ["DRAGONFLY_CHECKPOINT_M"], device, merge=not adapters)
+        bank = AdapterBank(large) if adapters else None
+        engine = Cascade(engine, large, float(os.environ.get("DRAGONFLY_CASCADE_THRESHOLD", "0.8")))
         log.info("cascade S -> M enabled at confidence < %.2f", engine.threshold)
+    if specialists:
+        engine = Swarm(engine, specialists, max_loaded=int(os.environ.get("DRAGONFLY_SWARM_MAX_LOADED", "4")),
+                       route_threshold=float(os.environ.get("DRAGONFLY_ROUTE_THRESHOLD", "0.5")),
+                       load_engine=lambda path: load_engine(path, device), bank=bank)
+        if os.environ.get("REDIS_URL"):
+            listen_for_reloads(os.environ["REDIS_URL"], engine)
     worker = Worker(engine, int(os.environ.get("DRAGONFLY_MAX_BATCH", "64")))
 
     redis = None

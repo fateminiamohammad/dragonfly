@@ -118,3 +118,35 @@ def test_blocking_plugin_fail_closed_raises_on_timeout():
 
     with pytest.raises(TimeoutError):
         asyncio.run(PluginHost([Strict()]).aon_request(REQ))
+
+
+def test_max_concurrency_queues_calls_outside_the_time_budget():
+    import asyncio
+    import threading
+    import time
+
+    state = {"now": 0, "peak": 0}
+    lock = threading.Lock()
+
+    class OneAtATime(Plugin):
+        name = "one-at-a-time"
+        blocking = True
+        timeout_s = 0.15  # each call fits; eight queued calls together would not
+        max_concurrency = 2
+
+        def on_request(self, request):
+            with lock:
+                state["now"] += 1
+                state["peak"] = max(state["peak"], state["now"])
+            time.sleep(0.05)
+            with lock:
+                state["now"] -= 1
+            return request
+
+    host = PluginHost([OneAtATime()])
+
+    async def run():
+        return await asyncio.gather(*(host.aon_request(REQ) for _ in range(8)))
+
+    assert all(r is REQ for r in asyncio.run(run()))  # no timeouts although 8 x 50 ms > 150 ms
+    assert state["peak"] == 2

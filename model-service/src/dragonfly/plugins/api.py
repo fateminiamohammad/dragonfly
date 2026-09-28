@@ -56,6 +56,9 @@ class Plugin:
     fail_open: bool = False
     blocking: bool = False
     timeout_s: float = 5.0
+    # blocking plugins: at most this many hook calls in flight (None = unbounded). Extra calls wait their turn before
+    # the time budget starts, so a service that handles calls one by one is not pushed past its deadline under load.
+    max_concurrency: int | None = None
 
     def setup(self, ctx: PluginContext) -> None:
         """Called once at startup."""

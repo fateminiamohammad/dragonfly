@@ -48,6 +48,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
             await media.close()
 
     app = FastAPI(title="dragonfly", version=__version__, lifespan=lifespan)
+    swarm = worker.engine if hasattr(worker.engine, "request_reload") else None
 
     @app.middleware("http")
     async def auth_and_ids(request: Request, call_next):
@@ -79,6 +80,8 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 req = req.model_copy(update={"state": state})
             req = await plugins.aon_request(req)
             record, meta = to_record(req)
+            if swarm is not None and req.model not in MODEL_NAMES:
+                record["specialist"] = req.model
             key = record_key(record, req.model)
             # "Cache-Control: no-cache" skips the lookup (standard HTTP semantics); the answer is still stored
             hit = None if "no-cache" in request.headers.get("cache-control", "") else cache.get(key)
@@ -88,6 +91,8 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 latency = 0.0
             else:
                 probs, stats = await asyncio.wrap_future(worker.submit(record))
+                if swarm is not None:
+                    stats["specialist"] = record.get("routed_to", "general")
                 cache.put(key, (probs, stats))
                 latency = stats["latency_ms"]
                 MODEL_LATENCY.observe(latency / 1000)
@@ -101,6 +106,8 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 "latency_ms": latency,
                 "cached": bool(hit),
             }
+            if "specialist" in stats:
+                body["specialist"] = stats["specialist"]
             body = await plugins.aon_decision(req, body)
         except PluginError as e:
             REQUESTS.labels("rejected").inc()
@@ -141,7 +148,17 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
             "cache": cache.stats(),
             "batches": {"count": worker.batches, "requests": worker.requests, "queued": worker.queue.qsize()},
         }
-        return {"models": [{"name": n, **card} for n in MODEL_NAMES]}
+        out = [{"name": n, **card} for n in MODEL_NAMES]
+        if swarm is not None:
+            out += [{"name": "auto", "description": "routes each request to the best specialist"}]
+            out += [{"name": s["name"], "description": s["description"], "tier": s["tier"], "specialist": True}
+                    for s in swarm.list()]
+        return {"models": out}
+
+    @app.get("/v1/specialists")
+    def specialists():
+        """The swarm: specialists this server can route to (the `model` field of a request)."""
+        return {"specialists": swarm.list() if swarm is not None else []}
 
     @app.get("/health")
     def health():

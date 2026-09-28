@@ -61,6 +61,8 @@ export interface DecideResponse {
   latency_ms: number;
   cached?: boolean;
   usage: { input_tokens: number; media_ms?: number };
+  /** set when the server runs a swarm: the specialist that answered, or "general" */
+  specialist?: string;
 }
 
 export interface ApiKey {

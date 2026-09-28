@@ -28,5 +28,7 @@ export const config = {
     // a key the model-service accepts (listed in DRAGONFLY_API_KEYS), for the playground and model info
     apiKey: process.env.MODEL_SERVICE_API_KEY ?? '',
   },
+  // labelled uploads for specialist training; the trainer worker must see the same path (./runs/uploads in compose)
+  uploadsDir: process.env.UPLOADS_DIR ?? '/runs/uploads',
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').filter(Boolean),
 };

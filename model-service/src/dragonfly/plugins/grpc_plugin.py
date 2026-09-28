@@ -4,6 +4,7 @@ and open or closed source, implements the hooks; the host calls it with a per-pl
   DRAGONFLY_GRPC_PLUGINS=fraud-rules@fraud-rules:50051,audit@audit:50051
   DRAGONFLY_PLUGIN_FRAUD_RULES_TIMEOUT_MS=20     time budget per call (default 50)
   DRAGONFLY_PLUGIN_FRAUD_RULES_FAIL_OPEN=1       on timeout or error: skip the plugin (default: fail the request)
+  DRAGONFLY_PLUGIN_FRAUD_RULES_MAX_CONCURRENCY=8  calls in flight at once; the rest queue before their deadline starts (default 4)
 """
 
 from __future__ import annotations
@@ -35,6 +36,8 @@ class GrpcPlugin(Plugin):
         self.fail_open = ctx.config.get("fail_open", "0") in ("1", "true", "yes")
         self.blocking = True  # a network call: run off the event loop
         self.timeout_s = self.timeout + 1.0  # the gRPC deadline fires first; this is only a backstop
+        # calls in flight at once: a sidecar that handles them one by one (e.g. Python) stays within its deadline
+        self.max_concurrency = int(ctx.config.get("max_concurrency", "4")) or None
         self.channel = grpc.insecure_channel(self.target)
         self._rpc = {
             m: self.channel.unary_unary(SERVICE + m, request_serializer=lambda b: b, response_deserializer=lambda b: b)

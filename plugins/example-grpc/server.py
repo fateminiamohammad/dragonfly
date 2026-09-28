@@ -44,7 +44,7 @@ class Policy(rpc.PluginServiceServicer):
 
 
 def main():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=32))
     rpc.add_PluginServiceServicer_to_server(Policy(), server)
     server.add_insecure_port(f"[::]:{os.environ.get('PORT', '50051')}")
     server.start()

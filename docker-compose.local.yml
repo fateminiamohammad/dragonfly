@@ -100,6 +100,7 @@ services:
       MODEL_SERVICE_URL: http://model-service:8000
     volumes:
       - ./backend/src:/app/src
+      - ./runs/uploads:/runs/uploads   # specialist training uploads, read by trainer-worker
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -123,6 +124,27 @@ services:
     volumes:
       - ./nginx/local/dragonfly.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on: [backend, ui]
+
+  # Trains the specialists users upload in the UI (docs/SWARM.md). Holds GPU memory only while a job runs.
+  trainer-worker:
+    build:
+      context: ./model-service
+      target: dev
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu126}
+    container_name: dragonfly-trainer-worker
+    env_file: docker/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./model-service/src:/app/src
+      - ./runs:/runs
+      - hfcache:/models/hf
+    <<: *gpu
+    command: dragonfly-worker
+    restart: unless-stopped
+    depends_on:
+      redis: { condition: service_healthy }
 
   trainer:
     profiles: [train]

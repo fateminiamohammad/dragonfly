@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { KEY_PREFIX, keyDigest, newKey } from '../src/keys/keys.service';
 import { optionKeys, toTrainingRecord } from '../src/review/review.controller';
+import { csvLabel, parseCsv, toTrainingLines } from '../src/specialists/specialists.controller';
 import { lastDays } from '../src/usage/usage.controller';
 
 describe('API keys', () => {
@@ -39,5 +40,35 @@ describe('review export', () => {
     const score = toTrainingRecord({ ...base, question: { type: 'score', instructions: null, criteria: ['a', 'b'] }, label: '1' });
     expect(score.questions.q.label).toBe(1);
     expect(score._meta.source).toBe('human-review');
+  });
+});
+
+describe('specialist uploads', () => {
+  it('parses quoted CSV fields', () => {
+    expect(parseCsv('text,label\n"a, ""quoted"" text",yes\r\nplain,no\n')).toEqual([
+      ['text', 'label'],
+      ['a, "quoted" text', 'yes'],
+      ['plain', 'no'],
+    ]);
+  });
+  it('maps labels per question type', () => {
+    expect(csvLabel({ type: 'noul', instructions: 'x' }, 'Yes').label).toBe(true);
+    expect(csvLabel({ type: 'choice', instructions: 'x', options: ['a', 'b'] }, 'b').label).toBe('b');
+    expect(csvLabel({ type: 'score', instructions: 'x', options: ['low', 'high'] }, 'high').label).toBe(1);
+    expect(csvLabel({ type: 'choice', instructions: 'x', options: ['a'] }, 'c').error).toBeDefined();
+  });
+  it('turns a CSV into training lines and refuses too little data', () => {
+    const rows = Array.from({ length: 60 }, (_, i) => `text ${i},${i % 2 ? 'refund' : 'billing'}`);
+    const lines = toTrainingLines({
+      format: 'csv',
+      data: ['text,label', ...rows].join('\n'),
+      question: { type: 'choice', instructions: 'intent?', options: ['refund', 'billing'] },
+    });
+    expect(lines).toHaveLength(60);
+    expect(JSON.parse(lines[1]).questions.q).toEqual({
+      type: 'choice', instructions: 'intent?', criteria: { refund: null, billing: null }, label: 'refund',
+    });
+    expect(() => toTrainingLines({ format: 'jsonl', data: lines.slice(0, 10).join('\n') })).toThrow(/at least 50/);
+    expect(() => toTrainingLines({ format: 'jsonl', data: '{"state":"x"}' })).toThrow(/bad rows/);
   });
 });

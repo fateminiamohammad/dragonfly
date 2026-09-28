@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--calibration", required=True)
     ap.add_argument("--test", required=True)
     ap.add_argument("--tolerance", type=float, default=0.01, help="accuracy allowed below tier M alone")
+    ap.add_argument("--out", default="runs/cascade.json", help="where to write the result")
     a = ap.parse_args()
 
     s, m = Engine.load(a.small), Engine.load(a.large)
@@ -72,7 +73,8 @@ def main():
               "calibration_table": table}
     print(f"\nchosen threshold {chosen:.2f} (on calibration) -> test: cascade {acc:.4f} with {esc:.1%} escalated "
           f"(S alone {result['test']['s_alone']:.4f}, M alone {result['test']['m_alone']:.4f})")
-    json.dump(result, open("runs/cascade.json", "w"), indent=2)
+    with open(a.out, "w") as f:
+        json.dump(result, f, indent=2)
 
 
 if __name__ == "__main__":

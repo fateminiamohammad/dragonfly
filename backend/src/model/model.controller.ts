@@ -2,7 +2,7 @@ import { BadGatewayException, Body, Controller, Get, HttpException, Post } from 
 import { Throttle } from '@nestjs/throttler';
 import { config } from '../config';
 
-async function callModel(path: string, init?: RequestInit) {
+export async function callModel(path: string, init?: RequestInit) {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (config.modelService.apiKey) headers.authorization = `Bearer ${config.modelService.apiKey}`;
   let res: Response;

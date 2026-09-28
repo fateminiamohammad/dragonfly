@@ -6,11 +6,13 @@ import { Media } from './pages/Media';
 import { Model } from './pages/Model';
 import { Playground } from './pages/Playground';
 import { Review } from './pages/Review';
+import { Specialists } from './pages/Specialists';
 import { Usage } from './pages/Usage';
 
 const PAGES = {
   playground: 'Playground',
   media: 'Media',
+  specialists: 'Specialists',
   review: 'Review',
   keys: 'API keys',
   usage: 'Usage',
@@ -75,6 +77,7 @@ export function App() {
       <main>
         {page === 'playground' && <Playground />}
         {page === 'media' && <Media />}
+        {page === 'specialists' && <Specialists />}
         {page === 'review' && <Review />}
         {page === 'keys' && <Keys />}
         {page === 'usage' && <Usage />}
