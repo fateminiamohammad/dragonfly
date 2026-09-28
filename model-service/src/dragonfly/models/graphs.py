@@ -13,9 +13,14 @@ and padded options have no tokens so their logits are -inf and trimmed.
 from __future__ import annotations
 
 import logging
+import threading
 from collections import OrderedDict
 
 import torch
+
+# Held while a graph is captured. Other threads that allocate or copy on the GPU (a specialist moved to the GPU by
+# the swarm's preload thread) take it too: CUDA work from another thread during a capture can invalidate it.
+CAPTURE_LOCK = threading.RLock()
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +87,7 @@ class GraphRunner:
                 self.model(**static)
         torch.cuda.current_stream().wait_stream(side)
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph, pool=self.pool):
+        with CAPTURE_LOCK, torch.cuda.graph(graph, pool=self.pool):
             out = self.model(**static)
         self.pool = graph.pool()
         if len(self.graphs) >= self.max_graphs:
@@ -158,7 +163,7 @@ class DecoderGraphRunner:
                 self.model.backbone(**static)
         torch.cuda.current_stream().wait_stream(side)
         graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(graph, pool=self.pool):
+        with CAPTURE_LOCK, torch.cuda.graph(graph, pool=self.pool):
             hidden = self.model.backbone(**static).last_hidden_state
         self.pool = graph.pool()
         if len(self.graphs) >= self.max_graphs:

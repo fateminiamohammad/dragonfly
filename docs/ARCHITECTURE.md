@@ -48,7 +48,7 @@ Each question is one row:
 
 ### Dragonfly-M (`model-service/src/dragonfly/models/decoder.py`)
 
-- Qwen3 (1.7B by default), frozen, plus LoRA adapters (r=16) and the same pointer head.
+- Qwen3 (4B served; 1.7B also supported), frozen, plus LoRA adapters (r=16) and the same pointer head.
 - A whole request is **one packed sequence**: `[state][question 1][options 1...][question 2][options 2...]`.
 - A custom attention mask means:
   - the state is read once and shared by every question;

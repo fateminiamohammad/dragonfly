@@ -13,11 +13,13 @@ from contextlib import asynccontextmanager
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from pydantic import ValidationError
 
 from .. import __version__
 from ..auth import KeyStore
 from ..batching import Worker
 from ..cache import AnswerCache, record_key
+from ..flows import FlowError, mermaid, run_flow
 from ..media import MediaError, MediaResolver, find_media
 from ..plugins import PluginError, PluginHost
 from ..schema import MODEL_NAMES, DecideRequest, to_answers, to_record
@@ -33,8 +35,9 @@ MODEL_LATENCY = Histogram("dragonfly_model_seconds", "Forward-pass time of the b
 
 def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list[str] | None = None,
                keys: KeyStore | None = None, cache: AnswerCache | None = None,
-               media: MediaResolver | None = None) -> FastAPI:
-    """No keys configured = open server (local default). `media` enables images/audio in the state (perception-service)."""
+               media: MediaResolver | None = None, flows=None) -> FastAPI:
+    """No keys configured = open server (local default). `media` enables images/audio in the state (perception-service).
+    `flows` stores saved flows (an object with `async get(name) -> dict | None`, e.g. flows.RedisFlowStore)."""
     plugins = plugins or PluginHost([])
     keys = keys or KeyStore(api_keys)
     cache = cache or AnswerCache(0)
@@ -70,6 +73,12 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
         return resp
 
     async def decide(req: DecideRequest, request: Request, background: BackgroundTasks) -> dict:
+        no_cache = "no-cache" in request.headers.get("cache-control", "")
+        return await decide_one(req, no_cache, request.state.key_digest, background)
+
+    async def decide_one(req: DecideRequest, no_cache: bool, key_digest: str | None,
+                         background: BackgroundTasks) -> dict:
+        """The whole decision pipeline (media, plugins, cache, model), shared by /v1/systemone and flow steps."""
         started = time.perf_counter()
         media_ms = 0.0
         try:
@@ -82,9 +91,10 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
             record, meta = to_record(req)
             if swarm is not None and req.model not in MODEL_NAMES:
                 record["specialist"] = req.model
-            key = record_key(record, req.model)
+            version = swarm.version(req.model) if swarm is not None else ""
+            key = record_key(record, req.model + version)  # a retrained specialist never serves old answers
             # "Cache-Control: no-cache" skips the lookup (standard HTTP semantics); the answer is still stored
-            hit = None if "no-cache" in request.headers.get("cache-control", "") else cache.get(key)
+            hit = None if no_cache else await cache.aget(key)
             CACHE.labels("hit" if hit else "miss").inc()
             if hit:
                 probs, stats = hit
@@ -93,7 +103,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 probs, stats = await asyncio.wrap_future(worker.submit(record))
                 if swarm is not None:
                     stats["specialist"] = record.get("routed_to", "general")
-                cache.put(key, (probs, stats))
+                await cache.aput(key, (probs, stats))
                 latency = stats["latency_ms"]
                 MODEL_LATENCY.observe(latency / 1000)
             answers = to_answers(probs, meta)
@@ -122,11 +132,43 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
         for m, tier in zip(meta, stats["tiers"]):
             QUESTIONS.labels(m["type"], tier).inc()
         LATENCY.observe(time.perf_counter() - started)
-        background.add_task(keys.record_usage, request.state.key_digest, len(meta), stats["tokens"])
+        background.add_task(keys.record_usage, key_digest, len(meta), stats["tokens"])
         return body
 
     app.post("/v1/systemone")(decide)
     app.post("/v1/decide")(decide)
+
+    async def run(flow: dict, payload: dict, request: Request, background: BackgroundTasks) -> dict:
+        no_cache = "no-cache" in request.headers.get("cache-control", "")
+
+        async def step(body: dict) -> dict:
+            try:
+                req = DecideRequest.model_validate(body)
+            except ValidationError as e:
+                raise HTTPException(422, f"flow step request is invalid: {e.errors()[:3]}") from e
+            return await decide_one(req, no_cache, request.state.key_digest, background)
+        try:
+            out = await run_flow(flow, payload.get("state"), step)
+        except FlowError as e:
+            raise HTTPException(422, str(e)) from e
+        if payload.get("mermaid"):
+            out["mermaid"] = mermaid(flow, out["path"])
+        return out
+
+    @app.post("/v1/flows/run")
+    async def run_inline_flow(payload: dict, request: Request, background: BackgroundTasks):
+        """Run a flow given inline: {"flow": {...}, "state": ..., "mermaid": true?}. See dragonfly/flows.py."""
+        if not isinstance(payload.get("flow"), dict):
+            raise HTTPException(422, "send {\"flow\": {...}, \"state\": ...}")
+        return await run(payload["flow"], payload, request, background)
+
+    @app.post("/v1/flows/{name}/run")
+    async def run_saved_flow(name: str, payload: dict, request: Request, background: BackgroundTasks):
+        """Run a saved flow (created in the UI, stored by the backend): {"state": ..., "mermaid": true?}."""
+        flow = await flows.get(name) if flows is not None else None
+        if flow is None:
+            raise HTTPException(404, f"no flow named {name!r}")
+        return await run(flow, payload, request, background)
 
     @app.post("/v1/perceive")
     async def perceive(payload: dict):

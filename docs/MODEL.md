@@ -5,11 +5,11 @@
 | | Dragonfly-S (speed) | Dragonfly-M (quality) |
 |---|---|---|
 | Code | `models/encoder.py` | `models/decoder.py` |
-| Backbone | ModernBERT-base (150M), fully fine-tuned | Qwen3-1.7B-Base (4B optional), frozen, plus LoRA r=16 |
+| Backbone | ModernBERT-base (150M), fully fine-tuned | Qwen3-4B-Base (served; 1.7B also supported), frozen, plus LoRA r=16 |
 | Layout | one row per question: `[CLS] instructions - opt1 - opt2 … [SEP] state [SEP]` | one packed sequence per request: `[state][q1][opts…][q2][opts…]` with a custom attention mask |
 | Order invariance | no; trained with shuffled options (flip rate 13.4%) | **by construction**: options are isolated and share position IDs (exact in fp32; 0.86% flips in bf16, from rounding on near-ties) |
 | Checkpoint | full encoder + head | LoRA adapters + head only; the base comes from the Hub |
-| Status | **trained** (`runs/dragonfly-s`) | **trained** (`runs/dragonfly-m`, 17 min, 18.5M trainable parameters) |
+| Status | **served:** `runs/dragonfly-s2` (mix-v1, distilled from M-4B, 35 min) | **served:** `runs/dragonfly-m4b` (mix-v1, pointer-head LayerNorm) |
 
 **Shared design:**
 - Both use the same **pointer head**: a scaled dot product of the question query against each option key, then a
@@ -19,8 +19,9 @@
   - `score` is a choice over the ordered levels, and the answer is the expected level.
 
 **Cascade:** with `DRAGONFLY_CHECKPOINT_M` set, tier S answers first and questions below
-`DRAGONFLY_CASCADE_THRESHOLD` are re-asked to tier M. The threshold is **0.55**, chosen on the calibration split with
-`scripts/tune_cascade.py`: the smallest threshold within 1 point of tier M's accuracy.
+`DRAGONFLY_CASCADE_THRESHOLD` are re-asked to tier M. The served threshold is **0.70**, chosen on
+`data/mix-v1/calibration.jsonl` with `scripts/tune_cascade.py`: the smallest threshold within 1 point of tier M's
+accuracy. 0.45 is the measured fast point (below).
 
 **Tier M document cache:** states of 512 tokens or more keep their KV cache (`DRAGONFLY_STATE_CACHE` entries), so
 repeated long documents only pay for their questions. It is tested identical to the full pass. Shorter states use the
@@ -91,6 +92,31 @@ Each metric is also reported `by_source` and `by_type`.
 
 ## Results
 
+### v0.2 (served): S2 + M-4B, trained on mix-v1
+
+All numbers on one RTX 3090 Ti. Test splits never overlap training: `scripts/build_mix.py` drops any record whose
+document appears in a test or calibration split.
+
+| decision-v2 test (1,440 questions) | Tier S2 | Tier M-4B | **Cascade 0.70** (served) | Cascade 0.45 (fast) |
+|---|---|---|---|---|
+| Accuracy | 80.1% | 86.2% | **84.4%** | 82.3% (measured by `compare_systemone`) |
+| ECE | 0.063 | 0.047 | - | - |
+| auto_rate@5% | 61.6% | 77% | - | - |
+| Option-order flip rate | 4.5% | 0.14% | - | - |
+| Questions answered by tier M | - | 100% | 26.2% | ~20% |
+
+- **By source (S2):** contrastive 94.4%, DBpedia 90.5%, IMDB 90.0%, AG News 89.0%, TREC 88.8%, MNLI 73.3%,
+  Yelp 71.9%, Banking77 71.6%, BoolQ 61.3%, Amazon 56.3%, SST-5 56.3%. Score questions (5-level ratings) remain the
+  weakest: 56.7%.
+- **typed-decisions test (1,950 decisions):** M-4B 79.3%; served cascade 79.2%.
+- **Training:** M-4B with LoRA r=16, a LayerNorm in the pointer head (`head_norm`; without it, 4B training diverged),
+  LoRA lr 1e-4, head lr 3e-4. S2: ModernBERT-base on M-4B's calibrated probabilities mixed 50/50 with the labels,
+  3 epochs, 35 min.
+- **From v0.1 to v0.2:** tier S 68.2% → 80.1%, tier M 76.9% → 86.2%, served cascade 76.6% → 84.4%.
+
+### v0.1: S + M-1.7B, trained on decision-v2 only
+
+
 All numbers are on the decision-v2 test split (1,440 questions), RTX 3090 Ti.
 
 | | Dragonfly-S | Dragonfly-M | **Cascade S→M (0.55)** |
@@ -156,6 +182,23 @@ A graph replays the whole pass in one launch:
 | Cascade S→M (2 of the 3 questions escalate), LoRA merged | 1 | **31.0 ms** | 24.4 ms | 32 req/s |
 | Cascade S→M, LoRA merged | 32 | 618 ms | 376 ms | 45 req/s (136 questions/s; tier M compute-bound at about 50% of bf16 peak) |
 
+**v0.2 (S2 → M-4B, threshold 0.70), same benchmark:**
+
+| Clients | Round-trip p50 | Model p50 | Throughput |
+|---|---|---|---|
+| 1 | **49.3 ms** | 42.5 ms | 20 req/s |
+| 8 | 304 ms | 232 ms | 26 req/s |
+| 32 | 991 ms | 495 ms | 31 req/s (93 questions/s) |
+
+The example request sends 2 of its 3 questions to the 4B tier, which is compute-bound under load (one M-4B request:
+21 ms merged). Tier S alone answers in about 5 ms. More replicas or GPUs scale this out (DEPLOYMENT.md).
+
+**Idle GPU clocks.** A desktop GPU drops to its idle clock (210 MHz on the RTX 3090 Ti, P8) within seconds of the last
+request, and the first request after a pause then takes 200–350 ms instead of 20–40 ms. The next one is fast again.
+Small keep-alive kernels did not hold the clock up (measured). For steady latency on a server, lock the clocks:
+`sudo nvidia-smi -lgc 1500,2100` on Linux, or "Prefer maximum performance" in the NVIDIA Control Panel on Windows.
+Benchmarks here run continuously, so they measure the ramped-up GPU.
+
 **Serving optimizations for tier M:**
 - LoRA is merged into the base weights at load (`Engine.load(..., merge=True)`), which is tested identical.
 - Common graph shapes are captured at startup (`DRAGONFLY_WARMUP`), so no request pays the one-off capture. p95 went
@@ -206,63 +249,56 @@ Raw results: `runs/compare-llm-*.json`.
 
 ### Benchmark 1: typed-decisions
 
-400 cases and 2,000 decisions, from four workflows:
-- agent-trace observability;
-- customer service;
-- invoice processing;
-- security incidents.
+400 cases and 2,000 decisions from four workflows (agent-trace observability, customer service, invoice processing,
+security incidents); 390 requests and 1,950 decisions after the harness drops cases it cannot send. It's the public
+benchmark where Jev and Laya publish their numbers. Measured 2026-09-28 (`runs/v02-td-*.json`).
 
-It's the public benchmark where Jev and Laya publish their numbers.
-
-| System | Trained on this benchmark's train split? | Accuracy | p50 | Source |
+| System | Trained on this benchmark's train split? | Accuracy | p50 | p95 |
 |---|---|---|---|---|
-| **Laya-typed-decisions** (421M) | yes | **76.7%** | 55 ms | measured |
-| **Dragonfly-td** (tier S, 150M) | yes | 73.1% | **47 ms** | measured |
-| Jev 1.13.0 | no | 72.7% | 710 ms (hosted) | published leaderboard |
-| Kev-4B | no | 66.9% | 110 ms | measured |
-| Dragonfly (our general model) | no | 46.1% | 86 ms | measured |
-| Laya (English base) | no | 36.0% | 55 ms | measured |
-| Prior (ignores the input) | - | 47.0% | - | published leaderboard |
+| **Dragonfly** (general, S2 → M-4B) | yes (part of mix-v1) | **79.2%** | 125 ms | 178 ms |
+| Dragonfly, fast threshold 0.45 | yes | 77.6% | 107 ms | 137 ms |
+| Laya-typed-decisions (421M) | yes | 76.8% | 57 ms | 79 ms |
+| Dragonfly-td specialist (tier S, 150M) | yes | 72.8% | **51 ms** | 74 ms |
+| Jev 1.13.0 | no | 72.7% | 710 ms (hosted) | - |
+| Kev-4B | no | 67.0% | 114 ms | 151 ms |
+| Kev-0.8B | no | 46.3% | 32 ms | 94 ms |
+| Laya (English base) | no | 36.3% | 59 ms | 80 ms |
+| Prior (ignores the input) | - | 47.0% | - | - |
 
 **Reading the typed-decisions results:**
-- **Trained on the benchmark (like Laya-typed-decisions):**
-  - Dragonfly-td is **1.2× faster** than Laya-td (47 vs 55 ms) and **3.6 points less accurate** (73.1% vs 76.7%).
-  - Dragonfly-td beats Jev's published score (72.7%) and is **about 15× faster** than Jev's published latency.
-    However, Jev is scored zero-shot there, so this is not like-for-like.
-  - Dragonfly-td is not temperature-calibrated (ECE 0.119), because the benchmark has no calibration split.
-- **Zero-shot (never saw these workflows):**
-  - Kev-4B (66.9%) is the best measured.
-  - Dragonfly's general model (46.1%) is at the prior, so it doesn't transfer to unseen workflows.
-  - Laya's base (36.0%) is below the prior, as its own card says (0.362).
-- **Laya reproduces its published numbers here** (76.7% vs its card's 76.6%; 36.0% vs 36.2%), a good sign that the
-  setup is fair.
+- Dragonfly's general model is the **most accurate** system measured: +2.4 points over Laya-typed-decisions and
+  +6.5 over Jev's published score. Jev is scored zero-shot there, so that comparison is not like-for-like.
+- It is **not the fastest** on this benchmark. Requests carry long documents and five questions, S2 is unsure on 71%
+  of them, and those go to the 4B tier. Laya-td is 2.2× faster. For speed, the tier S specialist answers in 51 ms
+  (72.8%).
+- Laya reproduces its published numbers here (76.8% vs its card's 76.6%; 36.3% vs 36.2%), a good sign that the setup
+  is fair.
 
 ### Benchmark 2: decision-v2
 
-200 requests (249 questions) from Kev's suite. Dragonfly trained on its train split, and Kev on the same sources. Kev
-never saw these test questions (checked against every file in its repo).
+All 1,166 test requests (1,430 questions) from Kev's suite. Dragonfly trained on its train split, and Kev on the same
+sources. Kev never saw these test questions (checked against every file in its repo). One client, each system alone
+on the GPU (`runs/v02-dv2-*.json`).
 
 | System | Accuracy | p50 | p95 | Throughput (1 client) |
 |---|---|---|---|---|
-| **Dragonfly** (cascade S→M) | 77.1% | **21 ms** | 81 ms | **41 req/s** |
-| Kev-4B | **89.2%** | 44 ms alone on the GPU / 71 ms sharing it | 124 / 308 ms | 18 / 10 req/s |
-| Kev-0.8B | 83.1% | 43 ms | 237 ms | 13 req/s |
-| Laya (English base, zero-shot) | 66.3% | 48 ms | 65 ms | 20 req/s |
+| Kev-4B | **87.9%** | 43.0 ms | 225 ms | 14.1 req/s |
+| Kev-0.8B | 85.0% | 16.7 ms | 163 ms | 25.8 req/s |
+| **Dragonfly** (threshold 0.70, default) | 84.6% | 16.5 ms | 73 ms | 36.1 req/s |
+| **Dragonfly** (threshold 0.45, fast) | 82.3% | **12.3 ms** | **46 ms** | **48.2 req/s** |
+| Laya (English base, zero-shot) | 64.4% | 52.2 ms | 72 ms | 12.5 req/s |
 
-With 8 clients, Dragonfly was 2.8–3.0× faster than Kev.
+v0.1 measured Kev-0.8B at 43 ms p50 on a 200-request sample while sharing the GPU; alone on the GPU it is as fast as
+Dragonfly at the median.
 
 ### Summary
 
-- **Speed:** Dragonfly is the fastest system we measured, on both benchmarks.
-  - It is **2–3.4× faster than Kev** and **1.2–2.3× faster than Laya**.
-  - Against Jev's *published* hosted latencies (236–710 ms), it is **5–30× faster**.
-- **Accuracy:**
-  - Kev-4B is better on both benchmarks when Dragonfly and Kev are compared like for like.
-  - Laya-typed-decisions is better on its own benchmark.
-  - Dragonfly beats Laya's base model and Jev's published typed-decisions score. It needs its trained variant to beat
-    Jev.
-- **The real gap is generalization.** Kev was trained on far more, and more varied, data. Dragonfly's general model
-  saw only 4,332 questions from 11 sources.
+- **decision-v2:** Kev-4B is the most accurate (+3.3 points over Dragonfly; the gap was 12.1 points in v0.1).
+  Dragonfly is 2.6× faster than Kev-4B at the median and has the best tail latency and throughput of every system.
+  Kev-0.8B is a close match: 0.4 points more accurate, the same median, a 2.2× worse p95.
+- **typed-decisions:** Dragonfly is the most accurate system measured, and slower than Laya.
+- **Jev:** against its *published* hosted latencies (236–710 ms), Dragonfly is 5–30× faster, and more accurate on
+  typed-decisions.
 
 ### Jev's published benchmarks
 

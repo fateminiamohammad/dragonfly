@@ -73,6 +73,13 @@ class Engine:
         self.graphs = None  # a GraphRunner once enable_cuda_graphs() is called
         self.state_cache = None  # a StateCache once enable_state_cache() is called (tier M)
 
+    def to(self, device: str) -> Engine:
+        """Moves the model (e.g. a specialist preloaded on the CPU) to `device`."""
+        self.device = device
+        self.model = self.model.to(device)
+        self.autocast = device == "cuda" and torch.cuda.is_bf16_supported()
+        return self
+
     def warmup(self) -> int:
         """Capture the common CUDA-graph buckets now, so no request pays the one-off capture cost (a first request in a
         new shape measured up to ~350 ms). Returns the number of graphs captured."""

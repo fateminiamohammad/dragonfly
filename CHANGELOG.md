@@ -4,7 +4,21 @@ All notable changes to this project. The plugin API (`dragonfly.plugins.api.API_
 
 ## [Unreleased]: v0.2.0
 
+### Models
+- Tier M on Qwen3-4B with a LayerNorm in the pointer head (stable 4B training); tier S2 distilled from it. Both
+  trained on mix-v1 (32.9k questions). decision-v2: cascade 76.6% → 84.4%, typed-decisions 79.2%.
+- `dragonfly-train --init` warm-starts from a trained checkpoint.
+
+### Swarm
+- Specialists behind one endpoint, picked with `model` (or `"auto"`, routed by tier S); tier M adapters share the
+  backbone and switch in 2.4 ms. `GET /v1/specialists`; hot reload over Redis pub/sub.
+- Train your own: UI Specialists page → backend `/api/specialists` → `trainer-worker` (70/10/20 split, warm start,
+  held-out accuracy).
+- Agent flows: `POST /v1/flows/run`, saved flows, UI Flows page with a Mermaid diagram of the path taken.
+- Scale-out: nginx `least_conn` upstream over all replicas; shared Redis answer cache (`DRAGONFLY_CACHE=redis`).
+
 ### Plugins
+- `max_concurrency` for blocking plugins (gRPC default 4): calls queue before their deadline starts.
 - Plugin API 1.1: `blocking = True` plugins run their hooks in a thread pool with a `timeout_s` budget, so network I/O
   never stalls the event loop. gRPC plugins are blocking.
 - Free built-in plugins (`dragonfly.essentials`): `guardrails` (PII redaction, injection/profanity checks, state size

@@ -92,6 +92,8 @@ Status codes:
 | Endpoint | Auth | Returns |
 |---|---|---|
 | `GET /v1/models` | key | model card: tier(s), backbone, trained, temperature, device, CUDA-graph, cache and batch stats, plugins |
+| `POST /v1/flows/run` `{flow, state, mermaid?}` | key | run an inline agent flow: path, every step's answers and latency ([SWARM](SWARM.md#agent-flows-chains-of-dragonflies)) |
+| `POST /v1/flows/:name/run` `{state, mermaid?}` | key | run a saved flow |
 | `GET /v1/specialists` | key | the swarm's specialists: name, description, tier, metrics, loaded, requests served ([SWARM](SWARM.md)) |
 | `GET /health` | none | `{"status": "ok", "version", "trained"}` |
 | `GET /metrics` | none (internal network only) | Prometheus metrics |
@@ -120,6 +122,10 @@ Every route except `/api/health` and `/api/auth/login` needs `Authorization: Bea
 | `GET /api/specialists` | any | the swarm's specialists (from `/v1/specialists`) and the 20 latest training jobs with progress |
 | `POST /api/specialists` `{name, description, tier, format: csv\|jsonl, data, question?, epochs?}` | any, 10/min | validate an upload and queue a training job ([SWARM](SWARM.md#train-your-own-ui--specialist-in-minutes)) |
 | `DELETE /api/specialists/:name` | admin | remove a specialist (every replica reloads) |
+| `GET /api/flows` | any | saved flows |
+| `PUT /api/flows/:name` `{flow}` | any | save a flow (structure checked; stored in Redis for every replica) |
+| `DELETE /api/flows/:name` | any | delete a flow |
+| `POST /api/flows/try` `{flow, state}` / `POST /api/flows/:name/run` `{state}` | any, 60/min | run a flow from the UI (with its Mermaid diagram) |
 
 ## How keys and usage flow
 

@@ -11,6 +11,7 @@ Configuration is by environment (see docker/.env.example):
   DRAGONFLY_STATE_CACHE    tier M: documents whose KV cache is kept for reuse (default 32, 0 = off)
   DRAGONFLY_COMPILE        1 = torch.compile the backbones (slower start, faster steady state)
   DRAGONFLY_CACHE_SIZE     answers kept for repeated requests (default 4096, 0 = off)
+  DRAGONFLY_CACHE          redis = share the answer cache between replicas (needs REDIS_URL); DRAGONFLY_CACHE_TTL s
   DRAGONFLY_API_KEYS       comma-separated bearer keys
   REDIS_URL                optional: API keys and usage shared with the backend
   PERCEPTION_URL           optional: perception-service base URL; enables images and audio in the state
@@ -35,8 +36,9 @@ import uvicorn
 
 from ..auth import KeyStore
 from ..batching import Worker
-from ..cache import AnswerCache
+from ..cache import AnswerCache, RedisAnswerCache, model_namespace
 from ..engine import Cascade, Engine
+from ..flows import RedisFlowStore
 from ..media import MediaResolver
 from ..plugins import PluginHost
 from ..swarm import AdapterBank, Swarm, read_card
@@ -56,6 +58,25 @@ def load_engine(path: str, device: str | None, merge: bool = True) -> Engine:
     if os.environ.get("DRAGONFLY_COMPILE") == "1":
         engine.model.backbone = torch.compile(engine.model.backbone, dynamic=True)
         log.info("torch.compile enabled for %s", path)
+    return engine
+
+
+def load_specialist(path: str, device: str | None) -> Engine:
+    """Runs on the swarm's preload thread: read from disk, then copy to the GPU (~3 s for tier S through WSL2's
+    paravirtualized GPU) while no CUDA graph is being captured on the model thread."""
+    from ..models.graphs import CAPTURE_LOCK
+
+    engine = Engine.load(path, "cpu")
+    with CAPTURE_LOCK:
+        engine.to(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    return engine
+
+
+def prepare_specialist(engine: Engine) -> Engine:
+    """On the model thread, at a specialist's first request. No warmup: capturing every common shape takes seconds,
+    so each shape is captured on its first use instead (~0.15 s once)."""
+    if os.environ.get("DRAGONFLY_CUDA_GRAPHS", "1") == "1" and engine.graphs is None:
+        engine.enable_cuda_graphs()
     return engine
 
 
@@ -107,7 +128,8 @@ def build_app():
     if specialists:
         engine = Swarm(engine, specialists, max_loaded=int(os.environ.get("DRAGONFLY_SWARM_MAX_LOADED", "4")),
                        route_threshold=float(os.environ.get("DRAGONFLY_ROUTE_THRESHOLD", "0.5")),
-                       load_engine=lambda path: load_engine(path, device), bank=bank)
+                       load_engine=lambda path: load_specialist(path, device), bank=bank,
+                       prepare=prepare_specialist)
         if os.environ.get("REDIS_URL"):
             listen_for_reloads(os.environ["REDIS_URL"], engine)
     worker = Worker(engine, int(os.environ.get("DRAGONFLY_MAX_BATCH", "64")))
@@ -121,9 +143,17 @@ def build_app():
     keys = KeyStore(static, redis)
     if not keys.enabled:
         log.warning("no API keys configured: /v1 is OPEN (fine locally, never in production)")
-    cache = AnswerCache(int(os.environ.get("DRAGONFLY_CACHE_SIZE", "4096")))
+    size = int(os.environ.get("DRAGONFLY_CACHE_SIZE", "4096"))
+    if os.environ.get("DRAGONFLY_CACHE") == "redis" and redis is not None and size:
+        # shared by all replicas; keyed by the served checkpoints so a model update never serves old answers
+        served = [os.environ.get("DRAGONFLY_CHECKPOINT", ""), os.environ.get("DRAGONFLY_CHECKPOINT_M", "")]
+        cache = RedisAnswerCache(redis, model_namespace(served), size,
+                                 int(os.environ.get("DRAGONFLY_CACHE_TTL", "86400")))
+    else:
+        cache = AnswerCache(size)
     media = MediaResolver(os.environ["PERCEPTION_URL"]) if os.environ.get("PERCEPTION_URL") else None
-    return create_app(worker, PluginHost.from_env(), keys=keys, cache=cache, media=media)
+    flows = RedisFlowStore(redis) if redis is not None else None
+    return create_app(worker, PluginHost.from_env(), keys=keys, cache=cache, media=media, flows=flows)
 
 
 def main() -> None:

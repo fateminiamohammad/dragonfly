@@ -106,18 +106,18 @@ The pointer head compares the question's last token (query) with each option's l
 flowchart LR
     Q[questions] --> S["tier S<br/>≈ 8 ms"]
     S --> D{calibrated<br/>confidence}
-    D -- "≥ 0.45 (64.5% of questions)" --> A([answer])
-    D -- "< 0.45 (35.5%)" --> M["tier M<br/>≈ 20 ms, reads the document once"]
+    D -- "≥ 0.70 (73.8% of questions)" --> A([answer])
+    D -- "< 0.70 (26.2%)" --> M["tier M (Qwen3-4B)<br/>≈ 21 ms, reads the document once"]
     M --> A
     M -. "still unsure?" .-> P["on_low_confidence plugin<br/>(e.g. escalate to an LLM or a human)"]
 ```
 
-**The threshold (0.45)** is chosen on held-out calibration data (`scripts/tune_cascade.py`), not on the test set.
+**The threshold (0.70)** is chosen on held-out calibration data (`scripts/tune_cascade.py`), not on the test set.
 
 **Result on 1,440 test questions:**
-- tier S alone: 68.2%;
-- tier M alone: 76.9%;
-- **cascade: 76.6%**, with 64.5% of questions never touching tier M.
+- tier S2 alone: 80.1%;
+- tier M-4B alone: 86.2%;
+- **cascade: 84.4%**, with 73.8% of questions never touching tier M.
 
 ## 7. Calibration: "70% sure" should mean right 70% of the time
 

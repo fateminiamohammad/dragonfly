@@ -121,13 +121,19 @@ class Swarm:
     """Engine-compatible (probs / describe / config / device): routes each record to its specialist."""
 
     def __init__(self, general, root: str | None, max_loaded: int = 4, route_threshold: float = 0.5,
-                 load_engine=None, bank: AdapterBank | None = None):
+                 load_engine=None, bank: AdapterBank | None = None, prepare=None):
+        """load_engine(path) -> Engine. With `prepare`, load_engine runs on a background thread (so it must not
+        overlap a CUDA-graph capture) and prepare(engine) -> Engine finishes it on the model thread."""
         self.general = general  # an Engine or a Cascade
         self.root = Path(root) if root else None
         self.max_loaded = max_loaded
         self.route_threshold = route_threshold
         self.load_engine = load_engine or (lambda path: Engine.load(path, general.device))
         self.bank = bank
+        self.prepare = prepare
+        self._lock = threading.Lock()
+        self._ready: dict[str, tuple[str, Engine]] = {}  # preloaded on the CPU, waiting for first use
+        self._loading: set[str] = set()
         self.config = general.config
         self.device = general.device
         self.cards: dict[str, dict] = {}
@@ -138,10 +144,30 @@ class Swarm:
 
     # ---- registry ------------------------------------------------------------------------------------------------
     def request_reload(self) -> None:
-        """Thread-safe: the model thread rescans the registry before its next batch."""
+        """Thread-safe: the model thread rescans the registry before its next batch. New or retrained tier S
+        specialists start loading from disk right away, so their first request doesn't wait for it."""
         self._reload.set()
+        self._preload(self.scan())
+
+    def scan(self) -> dict[str, dict]:
+        """The specialist cards on disk (reads files only; safe from any thread)."""
+        cards = {}
+        if self.root is not None and self.root.is_dir():
+            for folder in sorted(self.root.iterdir()):
+                try:
+                    card = read_card(folder)
+                except (OSError, ValueError, KeyError) as e:
+                    log.warning("skipping specialist %s: %s", folder.name, e)
+                    continue
+                if card is None or card["name"] in GENERAL or card["name"] == AUTO:
+                    continue
+                if card["tier"] == "M" and self.bank is None:
+                    continue
+                cards[card["name"]] = card
+        return cards
 
     def reload(self) -> None:
+        """Model thread only: applies the registry on disk (loads tier M adapters, drops removed specialists)."""
         self._reload.clear()
         cards = {}
         if self.root is not None and self.root.is_dir():
@@ -170,22 +196,76 @@ class Swarm:
         for gone in set(self.loaded) - set(cards):
             del self.loaded[gone]
         for name in set(self.cards) & set(cards):
-            if self.cards[name].get("path") != cards[name].get("path") and name in self.loaded:
-                del self.loaded[name]
+            version = self.version_of(cards[name])
+            if self.version_of(self.cards[name]) != version:  # retrained in place
+                self.loaded.pop(name, None)
+                with self._lock:
+                    if name in self._ready and self._ready[name][0] != version:
+                        del self._ready[name]
         if self.bank is not None:
             for gone in set(self.bank.adapters) - set(cards) - {"general"}:
                 if self.bank.active == gone:
                     self.bank.activate("general")
                 del self.bank.adapters[gone]
                 self.bank.caches.pop(gone, None)
+        with self._lock:
+            for gone in set(self._ready) - set(cards):
+                del self._ready[gone]
         self.cards = cards
         log.info("swarm: %d specialists (%s)", len(cards), ", ".join(cards) or "none")
+        self._preload(cards)
+
+    def _preload(self, cards: dict[str, dict]) -> None:
+        """Load new tier S specialists on a background thread, so a first request doesn't wait for the disk or the
+        host-to-GPU copy. load_engine must not overlap a CUDA-graph capture (serve.load_specialist holds
+        models.graphs.CAPTURE_LOCK while copying); prepare() then runs on the model thread."""
+        if self.prepare is None:
+            return
+        def current(name: str, card: dict) -> bool:
+            """Already loaded (same version) or loading."""
+            version = self.version_of(card)
+            applied = self.cards.get(name)
+            if name in self.loaded and applied is not None and self.version_of(applied) == version:
+                return True
+            return name in self._loading or (name in self._ready and self._ready[name][0] == version)
+
+        with self._lock:
+            todo = [(n, c) for n, c in cards.items() if c["tier"] == "S" and not current(n, c)]
+            room = max(0, self.max_loaded - len(self._ready) - len(self._loading))
+            todo = todo[:room]
+            self._loading.update(n for n, _ in todo)
+        if not todo:
+            return
+
+        def run():
+            for name, card in todo:
+                try:
+                    engine = self.load_engine(card["path"])
+                    with self._lock:
+                        self._ready[name] = (self.version_of(card), engine)
+                except Exception as e:
+                    log.warning("preloading specialist %s failed: %s", name, e)
+                finally:
+                    with self._lock:
+                        self._loading.discard(name)
+        threading.Thread(target=run, name="dragonfly-swarm-preload", daemon=True).start()
+
+    @staticmethod
+    def version_of(card: dict) -> str:
+        return f"@{card.get('job') or card.get('created') or ''}"
+
+    def version(self, name: str) -> str:
+        """Changes when a specialist is retrained (cache keys include it)."""
+        card = self.cards.get(name)
+        return "" if card is None else self.version_of(card)
 
     def list(self) -> list[dict]:
+        # a reload may still be pending on the model thread: show what is on disk now
+        cards = self.scan() if self._reload.is_set() else self.cards
         return [{"name": c["name"], "description": c["description"], "tier": c["tier"],
                  "metrics": c.get("metrics", {}), "created": c.get("created"),
                  "loaded": c["tier"] == "M" or c["name"] in self.loaded,
-                 "served": self.served.get(c["name"], 0)} for c in self.cards.values()]
+                 "served": self.served.get(c["name"], 0)} for c in cards.values()]
 
     # ---- serving -------------------------------------------------------------------------------------------------
     def _engine(self, name: str):
@@ -195,7 +275,14 @@ class Swarm:
         if name in self.loaded:
             self.loaded.move_to_end(name)
             return self.loaded[name]
-        engine = self.load_engine(card["path"])
+        with self._lock:
+            ready = self._ready.pop(name, None)
+        if ready is not None and ready[0] == self.version_of(card):
+            engine = ready[1]
+        else:
+            engine = self.load_engine(card["path"])
+        if self.prepare is not None:
+            engine = self.prepare(engine)  # CUDA graphs on (captured per shape on first use)
         self.loaded[name] = engine
         while len(self.loaded) > self.max_loaded:
             evicted, _ = self.loaded.popitem(last=False)

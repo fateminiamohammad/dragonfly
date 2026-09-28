@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { checkFlow } from '../src/flows/flows.controller';
 import { KEY_PREFIX, keyDigest, newKey } from '../src/keys/keys.service';
 import { optionKeys, toTrainingRecord } from '../src/review/review.controller';
 import { csvLabel, parseCsv, toTrainingLines } from '../src/specialists/specialists.controller';
@@ -70,5 +71,17 @@ describe('specialist uploads', () => {
     });
     expect(() => toTrainingLines({ format: 'jsonl', data: lines.slice(0, 10).join('\n') })).toThrow(/at least 50/);
     expect(() => toTrainingLines({ format: 'jsonl', data: '{"state":"x"}' })).toThrow(/bad rows/);
+  });
+});
+
+describe('flows', () => {
+  it('reports structural errors before saving', () => {
+    expect(checkFlow({ steps: { a: { questions: { q: {} }, next: [{ to: 'a' }] } } })).toEqual([]);
+    expect(checkFlow({})).toHaveLength(1);
+    expect(checkFlow({ start: 'x', steps: { a: { next: [{ to: 'b' }] } } })).toEqual([
+      'start step "x" is not defined',
+      'step "a" needs questions',
+      'step "a" goes to undefined step "b"',
+    ]);
   });
 });

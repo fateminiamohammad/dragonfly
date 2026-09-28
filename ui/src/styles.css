@@ -439,3 +439,32 @@ pre.ocr {
 .model-select {
   width: auto;
 }
+
+.diagram {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+.diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+textarea.short {
+  min-height: 72px;
+}
+.flow-name {
+  width: 180px;
+}
+.row.wrap {
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.pill-button {
+  display: inline-flex;
+}
+.pill-button button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.pill-button button:last-child {
+  border-radius: 0 8px 8px 0;
+  border-left: none;
+}

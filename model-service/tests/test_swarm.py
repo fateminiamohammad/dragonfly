@@ -147,3 +147,37 @@ def test_api_lists_specialists_and_reports_the_route(engine, tmp_path):
         assert r.json()["specialist"] == "invoices"
         assert c.post("/v1/systemone", json={**request, "model": "dragonfly-latest"}).json()["specialist"] == "general"
         assert c.post("/v1/systemone", json={**request, "model": "nope"}).status_code == 422
+
+
+def test_listing_shows_new_specialists_before_the_model_thread_reloads(engine, tmp_path):
+    swarm = Swarm(engine, str(tmp_path), load_engine=lambda path: engine)
+    card(tmp_path / "invoices", "invoices")
+    swarm.request_reload()
+    assert [s["name"] for s in swarm.list()] == ["invoices"]  # read from disk, nothing loaded yet
+    assert swarm.cards == {}
+
+
+def test_specialists_preload_in_the_background_and_retraining_replaces_them(engine, tmp_path):
+    import time
+
+    card(tmp_path / "invoices", "invoices")
+    loads, prepared = [], []
+
+    def load(path):
+        loads.append(path)
+        return copy.deepcopy(engine)
+
+    swarm = Swarm(engine, str(tmp_path), load_engine=load, prepare=lambda e: prepared.append(e) or e)
+    deadline = time.time() + 5
+    while not swarm._ready and time.time() < deadline:
+        time.sleep(0.01)
+    assert "invoices" in swarm._ready and len(loads) == 1  # read on the preload thread
+    swarm.probs([rec(specialist="invoices")])
+    assert len(loads) == 1 and len(prepared) == 1  # the first request used it: no load on the model thread
+
+    spec = json.loads((tmp_path / "invoices" / "specialist.json").read_text())
+    (tmp_path / "invoices" / "specialist.json").write_text(json.dumps({**spec, "job": "retrained"}))
+    swarm.request_reload()
+    swarm.probs([rec()])
+    assert "invoices" not in swarm.loaded  # the old version is dropped
+    assert swarm.version("invoices") == "@retrained"

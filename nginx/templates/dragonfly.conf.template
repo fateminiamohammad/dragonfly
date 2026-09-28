@@ -5,6 +5,16 @@
 
 resolver 127.0.0.11 valid=10s;
 
+# All model-service replicas (docker compose up --scale model-service=N): Docker DNS returns one address per replica,
+# `resolve` re-reads it as replicas come and go, and least_conn sends each request to the least busy one (tier M
+# requests take far longer than tier S ones, so round-robin would pile work on one replica).
+upstream model_service {
+    zone model_service 64k;
+    least_conn;
+    server model-service:8000 resolve;
+    keepalive 32;
+}
+
 add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 add_header X-Content-Type-Options nosniff always;
 add_header X-Frame-Options DENY always;
@@ -30,8 +40,7 @@ server {
     client_max_body_size 30m;  # images/audio arrive base64-encoded in JSON
 
     location /v1/ {
-        set $model_upstream http://model-service:8000;
-        proxy_pass $model_upstream;
+        proxy_pass http://model_service;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host $host;
@@ -42,8 +51,7 @@ server {
     }
 
     location = /health {
-        set $model_upstream http://model-service:8000;
-        proxy_pass $model_upstream;
+        proxy_pass http://model_service;
     }
 
     location /api/ {

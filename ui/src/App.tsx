@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, getToken, setToken } from './api';
+import { Flows } from './pages/Flows';
 import { Keys } from './pages/Keys';
 import { Login } from './pages/Login';
 import { Media } from './pages/Media';
@@ -13,6 +14,7 @@ const PAGES = {
   playground: 'Playground',
   media: 'Media',
   specialists: 'Specialists',
+  flows: 'Flows',
   review: 'Review',
   keys: 'API keys',
   usage: 'Usage',
@@ -78,6 +80,7 @@ export function App() {
         {page === 'playground' && <Playground />}
         {page === 'media' && <Media />}
         {page === 'specialists' && <Specialists />}
+        {page === 'flows' && <Flows />}
         {page === 'review' && <Review />}
         {page === 'keys' && <Keys />}
         {page === 'usage' && <Usage />}

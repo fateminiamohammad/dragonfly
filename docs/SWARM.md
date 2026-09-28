@@ -66,6 +66,11 @@ runs/specialists/invoices/
 - The `description` matters: `"model": "auto"` routes by it.
 - Reserved names: `auto`, `general`, `dragonfly-latest`, `jev-latest`, `kev-latest`.
 
+**Loading.** A new or retrained tier S specialist is read from disk and copied to the GPU on a background thread as
+soon as the reload notice arrives, so its first request doesn't wait for either (measured: 8.4 s → 0.21 s for the first
+request after training; the rest is capturing that request's CUDA graph once). The copy never overlaps a CUDA-graph
+capture on the model thread (`models.graphs.CAPTURE_LOCK`).
+
 **Reloading.** The server rescans the folder when anything is published on the Redis channel `dragonfly:specialists`
 (`redis-cli PUBLISH dragonfly:specialists reload`). The backend does this after training. Every replica listens, so
 all of them pick up the change. A tier S specialist that was replaced on disk is reloaded on its next request.
@@ -124,3 +129,48 @@ Its options are the specialists' descriptions plus "none of these". That is one 
 `DRAGONFLY_ROUTE_THRESHOLD` confidence, or on "none", the general model answers. Routing is only as good as the
 descriptions and the general model, so name the domain concretely ("Dutch invoices and payment reminders", not
 "finance").
+
+## Agent flows: chains of dragonflies
+
+A flow is a small graph of steps. Each step asks one model (the general model, a specialist, or `auto`) a few
+questions; each edge has a condition on those answers and picks the next step. The model-service runs the whole
+chain itself: no network hop between steps, one batched decision per step.
+
+```mermaid
+flowchart LR
+    classify["classify<br/><small>general: intent</small>"] -- "intent.choice == refund and intent.confidence > 0.5" --> refund_risk["refund_risk<br/><small>fraud specialist: escalate, mood</small>"]
+    classify -- "intent.choice == delivery" --> delivery["delivery<br/><small>general: late</small>"]
+```
+
+```json
+{
+  "start": "classify",
+  "steps": {
+    "classify": {
+      "questions": {"intent": {"type": "choice", "criteria": {"refund": "wants money back", "delivery": null, "other": null}}},
+      "next": [{"if": "intent.choice == refund and intent.confidence > 0.5", "to": "refund_risk"},
+               {"if": "intent.choice == delivery", "to": "delivery"}]
+    },
+    "refund_risk": {
+      "model": "fraud",
+      "state": "{{state}}
+
+The customer asks for a refund.",
+      "questions": {"escalate": {"type": "noul", "instructions": "Should a human approve this refund?"}}
+    },
+    "delivery": {"questions": {"late": {"type": "noul", "instructions": "Is the parcel late?"}}}
+  }
+}
+```
+
+- **Conditions:** `<question>.<field> <op> <value>` clauses joined with `and`, alternatives with `or` (`and` binds
+  tighter). Fields: `choice`, `noul`, `score`, `confidence`, or `value` (whichever answer the question has). Operators:
+  `== != > >= < <=`. The first edge that holds wins; an edge without `if` always holds; no match ends the flow.
+- **State mapping:** a step's `state` is a template. `{{state}}` is the flow's input, and
+  `{{<step>.<question>.<field>}}` is an earlier answer. Without `state`, a step sees the flow's input.
+- **Safety:** flows are validated before they run (every edge must reach a defined step), and a run stops after 16
+  steps, so a loop can't spin forever.
+- **Run:** `POST /v1/flows/run {"flow": {...}, "state": ...}` for an inline flow, or save it from the UI **Flows** page
+  (stored in Redis) and call `POST /v1/flows/<name>/run {"state": ...}`. Add `"mermaid": true` to get the diagram
+  with the path taken highlighted. The response has the path, every step's answers, and per-step latency.
+- Each step goes through the same pipeline as `/v1/systemone`: plugins, cache, usage accounting.

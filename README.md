@@ -47,11 +47,14 @@ TypeSafe and Kev clients work by changing `base_url`.
 
 | Model | Accuracy | Calibration error (ECE) | Order-flip rate |
 |---|---|---|---|
-| Dragonfly-S (ModernBERT, distilled from M) | 68.2% | 0.032 | 12.9% |
-| Dragonfly-M (Qwen3-1.7B + LoRA) | 76.9% | 0.027 | 0.86% |
-| **Cascade S→M** (served) | **76.6%** | - | 35.5% of questions go to M |
+| Dragonfly-S2 (ModernBERT-base, distilled from M-4B) | 80.1% | 0.063 | 4.5% |
+| Dragonfly-M (Qwen3-4B + LoRA) | 86.2% | 0.047 | 0.14% |
+| **Cascade S→M** (served, threshold 0.70) | **84.4%** | - | 26.2% of questions go to M |
 
-**Versus common LLMs on the same GPU and the same requests** (`bench/compare_llm.py`):
+Both tiers were trained on mix-v1: 32.9k questions from Kev's public suites and typed-decisions' train split,
+screened against every test split ([docs/MODEL.md](docs/MODEL.md#data)).
+
+**Versus common LLMs on the same GPU and the same requests** (`bench/compare_llm.py`; measured with the v0.1 models, S + M-1.7B):
 
 | Against | Dragonfly | LLM | Dragonfly is |
 |---|---|---|---|
@@ -69,30 +72,31 @@ TypeSafe and Kev clients work by changing `base_url`.
 **Versus other open decision models, and Jev's published numbers** (same GPU, identical requests;
 `bench/compare_systemone.py`):
 
-| typed-decisions (400 cases) | Trained on it? | Accuracy | p50 |
+| typed-decisions (390 requests, 1,950 decisions) | Trained on its train split? | Accuracy | p50 |
 |---|---|---|---|
-| Laya-typed-decisions | yes | **76.7%** | 55 ms |
-| **Dragonfly-td** | yes | 73.1% | **47 ms** |
+| **Dragonfly** (general, cascade) | yes (in mix-v1) | **79.2%** | 125 ms |
+| Laya-typed-decisions | yes | 76.8% | 57 ms |
+| Dragonfly-td specialist (tier S) | yes | 72.8% | **51 ms** |
 | Jev 1.13.0 *(published)* | no | 72.7% | 710 ms (hosted) |
-| Kev-4B | no | 66.9% | 110 ms |
-| Dragonfly (general) | no | 46.1% | 86 ms |
+| Kev-4B | no | 67.0% | 114 ms |
+| Kev-0.8B | no | 46.3% | 32 ms |
+| Laya (English base) | no | 36.3% | 59 ms |
 
-| decision-v2 (200 requests) | Accuracy | p50 |
-|---|---|---|
-| Kev-4B | **89.2%** | 44 ms |
-| Kev-0.8B | 83.1% | 43 ms |
-| **Dragonfly** | 77.1% | **21 ms** |
-| Laya (English base) | 66.3% | 48 ms |
+| decision-v2 (1,166 requests, 1,430 questions) | Accuracy | p50 | p95 | req/s (1 client) |
+|---|---|---|---|---|
+| Kev-4B | **87.9%** | 43.0 ms | 225 ms | 14.1 |
+| Kev-0.8B | 85.0% | 16.7 ms | 163 ms | 25.8 |
+| **Dragonfly** (threshold 0.70, default) | 84.6% | 16.5 ms | 73 ms | 36.1 |
+| **Dragonfly** (threshold 0.45, fast) | 82.3% | **12.3 ms** | **46 ms** | **48.2** |
+| Laya (English base) | 64.4% | 52.2 ms | 72 ms | 12.5 |
 
-**Dragonfly is the fastest system measured:**
-- 2–3.4× faster than Kev;
-- 1.2–2.3× faster than Laya;
-- 5–30× faster than Jev's published hosted latencies.
-
-**On accuracy, Dragonfly isn't the best:**
-- Kev-4B is more accurate on both benchmarks.
-- Laya-typed-decisions is more accurate on its own benchmark.
-- Dragonfly's general model doesn't transfer to workflows it never saw.
+**Where Dragonfly stands (all measured on one RTX 3090 Ti, identical requests):**
+- **Fastest on decision-v2:** 2.6× faster than Kev-4B at the median, and the best tail (p95) and throughput of all.
+  Kev-0.8B matches its median latency.
+- **Most accurate on typed-decisions**, ahead of Laya-typed-decisions (+2.4 points) and Jev's published score (+6.5),
+  but about 2× slower than Laya there: 71% of those long, multi-question requests go to the 4B tier.
+  The tier S specialist answers in 51 ms at 72.8%.
+- **Kev-4B is still more accurate on decision-v2** (3.3 points; the gap was 12.1 points before v0.2).
 
 Details and every source: [docs/MODEL.md](docs/MODEL.md#versus-kev-laya-and-jev).
 
@@ -166,10 +170,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
    and 113 → 21 ms for tier M. Common shapes are captured at startup.
 5. **Local serving, dynamic batching, answer cache, optional `torch.compile`.**
 
-**Measured:**
-- 3-question request: 14 ms end to end on tier S; 31 ms when 2 of the 3 questions escalate to tier M.
-- 32 clients: 153 requests/s on tier S. That is about 200× faster than an LLM that writes reasoning plus
-JSON (1 s or more), and about 20–50× faster than an LLM constrained to output only the answer.
+**Measured** (S2 → M-4B cascade, 3-question request, `bench/latency.py`, unique requests):
+- 1 client: 49 ms end to end, 42 ms in the model (2 of the 3 questions go to the 4B tier).
+- 32 clients: 31 requests/s (93 questions/s), bounded by the 4B tier. Tier S alone answers in about 5 ms.
+- An idle desktop GPU clocks down: the first request after a pause can take 200–350 ms. Servers should lock the GPU
+  clocks ([docs/MODEL.md](docs/MODEL.md#speed)).
 
 `bench/compare_llm.py` measures **both** comparisons on the same data against any OpenAI-compatible API, so you can
 check these numbers yourself.

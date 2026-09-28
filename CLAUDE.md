@@ -26,27 +26,25 @@ Every model in the request path is **non-autoregressive**: one forward pass, wit
 
 | Area | State |
 |---|---|
-| Dragonfly-S (ModernBERT, speed tier) | trained and **distilled from M**: 68.2% accuracy, ECE 0.032; serving `runs/dragonfly-s-distilled` |
-| Dragonfly-M (Qwen3-1.7B + LoRA, quality tier) | trained: 76.9%, ECE 0.027, 0.86% order flips; serving `runs/dragonfly-m` (LoRA merged at load) |
-| Cascade S→M | threshold 0.45 (tuned on calibration): **76.6% test**, 35.5% of questions escalated |
-| Latency (RTX 3090 Ti, CUDA graphs on both tiers, warm-up at startup) | 3-question request: 14 ms (tier S only) / 31 ms (2 of 3 escalated) end to end |
+| Dragonfly-S2 (ModernBERT-base, speed tier) | trained on mix-v1 (32.9k questions), **distilled from M-4B**: 80.1% decision-v2, ECE 0.063; serving `runs/dragonfly-s2` |
+| Dragonfly-M (Qwen3-4B + LoRA, quality tier, `head_norm`) | trained on mix-v1: 86.2% decision-v2, 79.3% typed-decisions, ECE 0.047, 0.14% order flips; serving `runs/dragonfly-m4b` (LoRA merged unless tier M specialists are installed) |
+| Cascade S→M | threshold 0.70 (tuned on mix-v1 calibration): **84.4% decision-v2 test**, 26.2% escalated; 0.45 = fast point (82.3%, 12.3 ms p50) |
+| Latency (RTX 3090 Ti, CUDA graphs on both tiers, warm-up at startup) | tier S ~5 ms; 3-question request with 2 escalated to M-4B: 49 ms end to end; 32 clients: 31 req/s. Idle GPU downclocks: first request after a pause 200–350 ms unless clocks are locked |
 | vs local LLMs, same GPU (`bench/compare_llm.py`) | more accurate than all; 5.7× vs Qwen2.5-7B answer-only, 55× vs it reasoning, **105× vs thinking Qwen3-8B** |
 | Images and audio (perception-service) | done: CTC speech (en/fa), PP-OCR, SigLIP-2 tags; 22–39× faster than Qwen2.5-VL-7B, 7.8× faster than Whisper-turbo |
 | Backend, UI (Media page), keys and usage via Redis, plugins (Python + gRPC) | done, verified end to end (`scripts/e2e_media.py`) |
 | CI and GHCR publishing | green |
-| vs Kev / Laya (same GPU, identical requests; `bench/compare_systemone.py`) | Dragonfly **fastest** (2–3.4× Kev, 1.2–2.3× Laya); **less accurate** than Kev-4B (89.2% vs 77.1% decision-v2) and Laya-td (76.7% vs Dragonfly-td 73.1% typed-decisions) |
+| vs Kev / Laya (same GPU, identical requests; `bench/compare_systemone.py`, `runs/v02-*.json`) | decision-v2: Dragonfly 84.6% at 16.5 ms p50 vs Kev-4B 87.9% at 43 ms, Kev-0.8B 85.0% at 16.7 ms, Laya 64.4%; Dragonfly best p95/throughput. typed-decisions: **Dragonfly most accurate (79.2%)** vs Laya-td 76.8%, Jev (published) 72.7%, Kev-4B 67.0%; but 125 ms p50 vs Laya-td 57 ms |
 | vs Jev | measured only via **published** numbers (typed-decisions 72.7% at 710 ms hosted); direct run needs `TYPESAFE_API_KEY` |
-| General-model transfer | weak: Dragonfly zero-shot on typed-decisions 46.1% (the prior is 47.0%); Kev-4B 66.9% |
+| Swarm (v0.2) | specialists by `model` name or `auto`; tier M adapters switch in 2.4 ms; train-your-own from the UI (trainer-worker); agent flows (`/v1/flows`); free plugins (guardrails, human-review, webhook-audit, llm-escalation); scale-out behind nginx `least_conn` |
 | **200× vs GPT** | **not measured**: no hosted-API key. Local thinking LLM measured at 105×. |
 
-**Next steps:**
-0. Close the accuracy and generalization gap: train on much broader data (Kev's decision-v7, hard/devtools and
-   typed-decisions train splits), and use a larger tier M (Qwen3-4B).
-1. Measure against a hosted frontier API (set `LLM_*`, run `bench/compare_llm.py`).
-2. Publish checkpoints (`scripts/publish_hf.py`, needs `huggingface-cli login`).
-3. Make the GHCR packages public and tag `v0.1.0`.
-4. Try TensorRT FP8 for tier S and a Qwen3-4B tier M.
-5. Test Persian ASR/OCR on real Persian media.
+**Next steps** (v0.2 plan, `docs/SWARM.md`):
+0. Phase A2/A3: S-large (ModernBERT-large) distilled from M-4B to cut escalations (typed-decisions escalates 71%);
+   weight-only INT8 for M-4B. Adopt only with measured gains.
+1. Phase A4: broader data (more public suites with per-source caps) and 2 epochs for M-4B; `docs/TRAINING.md`.
+2. Phase F: "layers of each model" diagrams in `docs/ALGORITHM.md`.
+3. Measure against a hosted frontier API (set `LLM_*`, run `bench/compare_llm.py`); publish checkpoints.
 
 ## Tech stack
 
@@ -97,7 +95,7 @@ cd ui && npm test && npm run build
 python bench/latency.py --url http://localhost:8000 --api-key <key> --concurrency 1
 python bench/compare_llm.py --data data/decision-v2/test.jsonl --n 50 --dragonfly http://localhost:8000
 python bench/compare_media.py --key <key> --llm-model qwen2.5vl:7b --whisper      # perception venv
-python scripts/tune_cascade.py --small runs/dragonfly-s-distilled --large runs/dragonfly-m --calibration ... --test ...
+python scripts/tune_cascade.py --small runs/dragonfly-s2 --large runs/dragonfly-m4b --calibration data/mix-v1/calibration.jsonl --test data/decision-v2/test.jsonl --out runs/cascade.json
 python scripts/e2e_media.py --password <ADMIN_PASSWORD>                            # full media path through nginx
 ```
 

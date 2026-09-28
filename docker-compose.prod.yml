@@ -42,7 +42,7 @@ services:
 
   model-service:
     image: ${MODEL_IMAGE:?set MODEL_IMAGE to ghcr.io/<owner>/dragonfly-model-service:<sha>}
-    container_name: dragonfly-model-service
+    # no container_name: scale out with `--scale model-service=N` (nginx balances replicas, docs/DEPLOYMENT.md)
     env_file: docker/${ENV_FILE_NAME:-.env}
     environment:
       REDIS_URL: redis://redis:6379

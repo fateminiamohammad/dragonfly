@@ -49,6 +49,25 @@ ops/deploy.sh backend ghcr.io/<owner>/dragonfly-backend:<40-char sha>
 - waits for the health check and smoke-tests the service;
 - **rolls back automatically** to the previous image if any step fails.
 
+## Scale-out (more dragonflies)
+
+The model-service keeps no request state of its own, so you can run several replicas behind the same nginx:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file docker/.env up -d --scale model-service=2
+```
+
+- **Balancing.** nginx sends `/v1` to the `model_service` upstream: every replica, re-resolved through Docker DNS as
+  replicas come and go, with `least_conn` (a tier M request takes several times longer than a tier S one, so plain
+  round-robin would pile work onto one replica).
+- **Shared state lives in Redis:** API keys and usage, the answer cache (`DRAGONFLY_CACHE=redis`), specialist
+  reloads (pub/sub `dragonfly:specialists`), saved flows and the review queue. A request can land on any replica.
+- **GPUs.** Replicas on one GPU share its compute; that only helps while a single replica leaves the GPU idle (small
+  batches, CPU-bound tokenization). With several GPUs, give each replica its own with `DRAGONFLY_DEVICE=cuda:K` (or
+  `NVIDIA_VISIBLE_DEVICES`) in a per-replica service or override file.
+- Replicas are named `dragonfly-model-service-1`, `-2`, …; use `docker compose logs model-service` to see them all.
+  The local compose file keeps one named replica with its port published for development.
+
 ## Monitoring
 
 ```bash

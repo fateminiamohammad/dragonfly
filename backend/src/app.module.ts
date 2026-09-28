@@ -10,6 +10,7 @@ import { config } from './config';
 import { dataSourceOptions } from './data-source';
 import { ApiKey } from './entities/api-key.entity';
 import { User } from './entities/user.entity';
+import { FlowsController } from './flows/flows.controller';
 import { HealthController } from './health.controller';
 import { KeysController } from './keys/keys.controller';
 import { KeysService } from './keys/keys.service';
@@ -29,7 +30,7 @@ import { UsageController } from './usage/usage.controller';
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
   ],
-  controllers: [HealthController, AuthController, KeysController, UsageController, ModelController, ReviewController, SpecialistsController],
+  controllers: [HealthController, AuthController, KeysController, UsageController, ModelController, ReviewController, SpecialistsController, FlowsController],
   providers: [
     AuthService,
     KeysService,
