@@ -32,7 +32,7 @@ jobs:
           pip install -e ../plugins/example-python
           pip install -e ../sdk/python
       - name: Lint
-        run: ruff check --config pyproject.toml src tests ../plugins ../bench ../scripts ../sdk/python
+        run: ruff check --config pyproject.toml src tests ../plugins ../bench ../scripts ../sdk/python ../examples
       - name: Test
         run: pytest -q && pytest -q ../sdk/python/tests
 
