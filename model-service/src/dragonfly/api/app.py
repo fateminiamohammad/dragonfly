@@ -6,6 +6,7 @@ own name. Each answer also carries `tier` (which model answered it); clients tha
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -23,7 +24,7 @@ from ..flows import FlowError, mermaid, run_flow
 from ..media import MediaError, MediaResolver, find_media
 from ..plugins import PluginError, PluginHost
 from ..risk import RiskTable
-from ..schema import MODEL_NAMES, DecideRequest, to_answers, to_record
+from ..schema import MODEL_NAMES, DecideRequest, render, to_answers, to_record
 
 REQUESTS = Counter("dragonfly_requests_total", "Decision requests", ["status"])
 QUESTIONS = Counter("dragonfly_questions_total", "Questions answered", ["type", "tier"])
@@ -32,6 +33,13 @@ LATENCY = Histogram("dragonfly_request_seconds", "Time inside the service per de
                     buckets=(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5))
 MODEL_LATENCY = Histogram("dragonfly_model_seconds", "Forward-pass time of the batch a request ran in",
                           buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1))
+
+
+def batch_stats(results: list[dict], seconds: float) -> dict:
+    ok = [r for r in results if "answers" in r]
+    questions = sum(len(r["answers"]) for r in ok)
+    return {"requests": len(results), "errors": len(results) - len(ok), "questions": questions,
+            "seconds": round(seconds, 3), "decisions_per_s": round(questions / seconds, 1) if seconds else None}
 
 
 def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list[str] | None = None,
@@ -53,6 +61,9 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
 
     app = FastAPI(title="dragonfly", version=__version__, lifespan=lifespan)
     swarm = worker.engine if hasattr(worker.engine, "request_reload") else None
+    batch_max = int(os.environ.get("DRAGONFLY_BATCH_MAX", "10000"))
+    batch_concurrency = int(os.environ.get("DRAGONFLY_BATCH_CONCURRENCY", "512"))
+    batch_jobs_kept = 20
 
     @app.middleware("http")
     async def auth_and_ids(request: Request, call_next):
@@ -78,7 +89,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
         return await decide_one(req, no_cache, request.state.key_digest, background)
 
     async def decide_one(req: DecideRequest, no_cache: bool, key_digest: str | None,
-                         background: BackgroundTasks) -> dict:
+                         background: BackgroundTasks, low_priority: bool = False) -> dict:
         """The whole decision pipeline (media, plugins, cache, model), shared by /v1/systemone and flow steps."""
         started = time.perf_counter()
         media_ms = 0.0
@@ -101,7 +112,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 probs, stats = hit
                 latency = 0.0
             else:
-                probs, stats = await asyncio.wrap_future(worker.submit(record))
+                probs, stats = await asyncio.wrap_future(worker.submit(record, low_priority))
                 if swarm is not None:
                     stats["specialist"] = record.get("routed_to", "general")
                 await cache.aput(key, (probs, stats))
@@ -153,6 +164,93 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
 
     app.post("/v1/systemone")(decide)
     app.post("/v1/decide")(decide)
+
+    # ---- batch / map-reduce ----------------------------------------------------------------------------------------
+    jobs: dict[str, dict] = {}
+
+    async def run_batch(requests: list, no_cache: bool, key_digest: str | None, background: BackgroundTasks,
+                        progress: dict | None = None) -> list[dict]:
+        """Every request through the normal pipeline at batch priority, shortest first (less padding per forward
+        pass), with bounded concurrency. Results come back in the original order; a bad request yields
+        {"error": ...} instead of failing the batch."""
+        results: list[dict | None] = [None] * len(requests)
+        parsed: list[tuple[int, DecideRequest]] = []
+        for i, body in enumerate(requests):
+            try:
+                parsed.append((i, DecideRequest.model_validate(body)))
+            except ValidationError as e:
+                results[i] = {"error": f"invalid request: {e.errors()[:2]}"}
+        parsed.sort(key=lambda x: len(render(x[1].state)))
+        slots = asyncio.Semaphore(batch_concurrency)
+
+        async def one(i: int, req: DecideRequest):
+            async with slots:
+                try:
+                    results[i] = await decide_one(req, no_cache, key_digest, background, low_priority=True)
+                except HTTPException as e:
+                    results[i] = {"error": e.detail}
+                if progress is not None:
+                    progress["done"] += 1
+        await asyncio.gather(*(one(i, req) for i, req in parsed))
+        if progress is not None:
+            progress["done"] = len(requests)
+        return results
+
+    def batch_requests(payload: dict) -> list:
+        requests = payload.get("requests")
+        if not isinstance(requests, list) or not requests:
+            raise HTTPException(422, 'send {"requests": [<a /v1/systemone request>, ...]}')
+        if len(requests) > batch_max:
+            raise HTTPException(413, f"at most {batch_max} requests per batch (DRAGONFLY_BATCH_MAX)")
+        return requests
+
+    @app.post("/v1/batch")
+    async def batch(payload: dict, request: Request, background: BackgroundTasks):
+        """Many decisions in one call ("map-reduce over data"): {"requests": [...]} -> {"results": [...], "stats"}.
+        Runs at batch priority: live requests always go first."""
+        requests = batch_requests(payload)
+        started = time.perf_counter()
+        results = await run_batch(requests, "no-cache" in request.headers.get("cache-control", ""),
+                                  request.state.key_digest, background)
+        return {"results": results, "stats": batch_stats(results, time.perf_counter() - started)}
+
+    @app.post("/v1/batch/jobs")
+    async def start_batch_job(payload: dict, request: Request, background: BackgroundTasks):
+        """The same as /v1/batch, in the background: returns {"id"} at once; poll GET /v1/batch/jobs/{id}."""
+        requests = batch_requests(payload)
+        job_id = uuid.uuid4().hex
+        job = {"id": job_id, "status": "running", "total": len(requests), "done": 0, "created": time.time()}
+        jobs[job_id] = job
+        for old in sorted(jobs.values(), key=lambda j: j["created"])[:-batch_jobs_kept]:
+            jobs.pop(old["id"], None)
+        key_digest = request.state.key_digest
+        no_cache = "no-cache" in request.headers.get("cache-control", "")
+
+        async def work():
+            started = time.perf_counter()
+            try:
+                job["results"] = await run_batch(requests, no_cache, key_digest, background_usage, job)
+                job["stats"] = batch_stats(job["results"], time.perf_counter() - started)
+                job["status"] = "done"
+            except Exception as e:  # noqa: BLE001 - a job must end in a state the client can read
+                job.update(status="failed", error=str(e)[:300])
+        job["task"] = asyncio.create_task(work())
+        return {"id": job_id, "total": len(requests)}
+
+    @app.get("/v1/batch/jobs/{job_id}")
+    def batch_job(job_id: str, results: bool = True):
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, "no such batch job on this replica (jobs live in the replica that started them)")
+        out = {k: v for k, v in job.items() if k != "task" and (results or k != "results")}
+        return out
+
+    class _Usage:
+        """Background jobs record usage right away (there is no response to attach a BackgroundTasks to)."""
+
+        def add_task(self, fn, *args):
+            asyncio.get_running_loop().create_task(fn(*args))
+    background_usage = _Usage()
 
     async def run(flow: dict, payload: dict, request: Request, background: BackgroundTasks) -> dict:
         no_cache = "no-cache" in request.headers.get("cache-control", "")

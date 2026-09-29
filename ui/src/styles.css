@@ -468,3 +468,22 @@ textarea.short {
   border-radius: 0 8px 8px 0;
   border-left: none;
 }
+
+table.results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+table.results th,
+table.results td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+table.results .cell-text {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

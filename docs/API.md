@@ -83,6 +83,25 @@ The promise holds for data like the calibration data; `fit_risk.py` reports the 
 to each target. A request without `max_error` is unchanged. Answers from a specialist are never `decided` (the table
 was fitted on the general model). Without a table, `max_error` returns 400.
 
+### Batch / map-reduce (`/v1/batch`)
+
+Many decisions in one call, e.g. every row of a table:
+
+```bash
+curl -s localhost:8000/v1/batch -H 'content-type: application/json' -d '{"requests": [
+  {"state": "ticket 1 ...", "questions": {"urgent": {"type": "noul", "instructions": "Urgent?"}}},
+  {"state": "ticket 2 ...", "questions": {"urgent": {"type": "noul", "instructions": "Urgent?"}}}]}'
+# -> {"results": [<a /v1/systemone response per request, in order>], "stats": {"decisions_per_s": ...}}
+```
+
+- Each request goes through the normal pipeline (plugins, cache, usage), shortest first so batches pad less, at
+  **batch priority**: live `/v1/systemone` requests always get the next forward pass, and batch work fills the rest.
+- A bad request yields `{"error": ...}` in its place; the rest of the batch is answered.
+- Up to `DRAGONFLY_BATCH_MAX` requests (default 10,000); `DRAGONFLY_BATCH_CONCURRENCY` in flight (default 512).
+- `POST /v1/batch/jobs` does the same in the background and returns `{"id"}`; `GET /v1/batch/jobs/{id}` shows
+  `status`, `done`/`total` and, when done, `results` and `stats` (`?results=false` for progress only). Jobs live in
+  the replica that started them (the last 20 are kept). The UI **Batch** page runs a question over a CSV this way.
+
 ### Specialists (the swarm)
 
 With `DRAGONFLY_SPECIALISTS` set, `model` selects a specialist by name, or `"auto"` to let the general model route.
@@ -143,6 +162,7 @@ Every route except `/api/health` and `/api/auth/login` needs `Authorization: Bea
 | `GET /api/specialists` | any | the swarm's specialists (from `/v1/specialists`) and the 20 latest training jobs with progress |
 | `POST /api/specialists` `{name, description, tier, format: csv\|jsonl, data, question?, epochs?}` | any, 10/min | validate an upload and queue a training job ([SWARM](SWARM.md#train-your-own-ui--specialist-in-minutes)) |
 | `DELETE /api/specialists/:name` | admin | remove a specialist (every replica reloads) |
+| `POST /api/batch/jobs` `{requests}` / `GET /api/batch/jobs/:id` | any, 10/min | batch decisions from the UI (proxies `/v1/batch/jobs`) |
 | `GET /api/flows` | any | saved flows |
 | `PUT /api/flows/:name` `{flow}` | any | save a flow (structure checked; stored in Redis for every replica) |
 | `DELETE /api/flows/:name` | any | delete a flow |

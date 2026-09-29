@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BatchController } from './batch/batch.controller';
 import { AuthController } from './auth/auth.controller';
 import { JwtAuthGuard } from './auth/auth.guard';
 import { AuthService } from './auth/auth.service';
@@ -30,7 +31,7 @@ import { UsageController } from './usage/usage.controller';
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
   ],
-  controllers: [HealthController, AuthController, KeysController, UsageController, ModelController, ReviewController, SpecialistsController, FlowsController],
+  controllers: [HealthController, AuthController, KeysController, UsageController, ModelController, ReviewController, SpecialistsController, FlowsController, BatchController],
   providers: [
     AuthService,
     KeysService,
