@@ -19,7 +19,7 @@ import torch
 from transformers import AutoModel, AutoTokenizer
 
 from .models.decoder import DecoderDecider, apply_lora, lora_state_dict, merge_lora
-from .models.encoder import EncoderDecider
+from .models.encoder import EncoderDecider, PackedEncoderDecider
 from .schema import question_confidence
 
 log = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ class CheckpointConfig:
     lora_r: int = 16
     lora_alpha: float = 32
     head_norm: bool = False  # LayerNorm before the pointer-head projections (on for new trainings: stabler)
+    packed: bool = False  # tier S: one sequence per request, the state read once (models/encoder.py, packed tier S)
     temperature: float = 1.0
     trained: bool = False
 
@@ -45,7 +46,8 @@ def default_device() -> str:
 
 def build_model(config: CheckpointConfig, backbone: torch.nn.Module) -> torch.nn.Module:
     if config.tier == "S":
-        return EncoderDecider(backbone, config.head_dim, config.head_norm)
+        cls = PackedEncoderDecider if config.packed else EncoderDecider
+        return cls(backbone, config.head_dim, config.head_norm)
     if config.tier == "M":
         apply_lora(backbone, config.lora_r, config.lora_alpha)
         return DecoderDecider(backbone, config.head_dim, config.max_state, config.max_length, config.head_norm)
@@ -114,7 +116,9 @@ class Engine:
             return
         from .models.graphs import DecoderGraphRunner, GraphRunner
 
-        self.graphs = GraphRunner(self.model) if self.config.tier == "S" else DecoderGraphRunner(self.model)
+        # packed models (tier M, packed tier S) share one runner: backbone graph per (rows, tokens), head outside
+        packed = self.config.tier == "M" or self.config.packed
+        self.graphs = DecoderGraphRunner(self.model) if packed else GraphRunner(self.model)
 
     # ---- persistence -------------------------------------------------------------------------------------------
     @classmethod

@@ -97,12 +97,23 @@ class GraphRunner:
         return self.graphs[key]
 
 
+def _copy(static, value) -> None:
+    """Copy a mask (a tensor, or ModernBERT's dict of per-layer-type masks) into the captured tensors."""
+    if isinstance(static, dict):
+        for k, v in static.items():
+            v.copy_(value[k])
+    else:
+        static.copy_(value)
+
+
 DECODER_ROWS = (1, 2, 4, 8, 16, 32, 64)  # the cascade can send a large batch of escalated requests
 DECODER_TOKENS = (64, 96, 128, 160, 192, 256, 320, 384, 512, 768, 1024, 1536, 2048)  # fine: padding is real GPU work
 
 
 class DecoderGraphRunner:
-    """CUDA graphs for the tier M backbone (Qwen3 + LoRA): one eager forward launched about 3,100 kernels (36 ms of GPU
+    """CUDA graphs for packed models: tier M and packed tier S (the model supplies masks() and pointer()).
+
+    For the tier M backbone (Qwen3 + LoRA): one eager forward launched about 3,100 kernels (36 ms of GPU
     work, about 115 ms wall on an RTX 3090 Ti). The packed batch is padded to a (rows, tokens) bucket; padding tokens get
     segment id -2, so by the attention mask they see only themselves and nothing real sees them. The pointer head runs
     outside the graph on the real rows and tokens."""
@@ -120,8 +131,6 @@ class DecoderGraphRunner:
 
     @torch.inference_mode()
     def __call__(self, batch: dict[str, torch.Tensor]) -> torch.Tensor | None:
-        from .decoder import attention_mask
-
         rows, length = batch["input_ids"].shape
         key = (bucket(rows, DECODER_ROWS), bucket(length, DECODER_TOKENS))
         if None in key:
@@ -139,22 +148,20 @@ class DecoderGraphRunner:
         static["position_ids"].zero_()
         static["input_ids"][:rows, :length].copy_(batch["input_ids"])
         static["position_ids"][:rows, :length].copy_(batch["position_ids"])
-        static["attention_mask"].copy_(attention_mask(qid, opt, static["attention_mask"].dtype))
+        _copy(static["attention_mask"], self.model.masks(qid, opt, static["position_ids"]))
         graph.replay()
         self.replays += 1
         flat = hidden[:rows, :length].reshape(-1, hidden.shape[-1])
         return self.model.pointer(flat, batch["query_idx"], batch["key_idx"])
 
     def _capture(self, key: tuple[int, int]):
-        from .decoder import attention_mask
-
         device = next(self.model.parameters()).device
-        dtype = next(self.model.backbone.parameters()).dtype
         qid = torch.full(key, -2, dtype=torch.long, device=device)
+        position_ids = torch.zeros(key, dtype=torch.long, device=device)
         static = {
             "input_ids": torch.zeros(key, dtype=torch.long, device=device),
-            "position_ids": torch.zeros(key, dtype=torch.long, device=device),
-            "attention_mask": attention_mask(qid, torch.full(key, -1, dtype=torch.long, device=device), dtype),
+            "position_ids": position_ids,
+            "attention_mask": self.model.masks(qid, torch.full(key, -1, dtype=torch.long, device=device), position_ids),
         }
         side = torch.cuda.Stream()
         side.wait_stream(torch.cuda.current_stream())
@@ -169,5 +176,5 @@ class DecoderGraphRunner:
         if len(self.graphs) >= self.max_graphs:
             self.graphs.popitem(last=False)
         self.graphs[key] = (graph, static, hidden)
-        log.info("captured tier M CUDA graph for rows=%d tokens=%d (%d graphs)", key[0], key[1], len(self.graphs))
+        log.info("captured packed CUDA graph for rows=%d tokens=%d (%d graphs)", key[0], key[1], len(self.graphs))
         return self.graphs[key]

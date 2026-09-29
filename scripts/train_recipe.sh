@@ -11,7 +11,7 @@
 #   scripts/train_recipe.sh eval     # both test suites through the serving stack (start serving first)
 #
 # Settings (environment): MIX (mix-v2), M_INIT (runs/dragonfly-m4b), M_OUT (runs/dragonfly-m4b-v2),
-# S_BACKBONE (answerdotai/ModernBERT-base), S_OUT (runs/dragonfly-s3), EPOCHS_M (1), EPOCHS_S (3).
+# S_BACKBONE (answerdotai/ModernBERT-base), S_OUT (runs/dragonfly-s3), S_PACKED (unset), EPOCHS_M (1), EPOCHS_S (3).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -52,7 +52,9 @@ case "${1:-}" in
       --data "/data/$MIX/train.jsonl" --out "/data/$MIX/train.distilled.jsonl" --mix 0.5
     ;;
   s)
-    run trainer-s-recipe trainer dragonfly-train --backbone "$S_BACKBONE" --grad-checkpointing --epochs "$EPOCHS_S" \
+    # S_PACKED=1: packed tier S (one sequence per request, the state read once; docs/MODEL.md)
+    run "trainer-s-recipe${S_PACKED:+-packed}" trainer dragonfly-train --backbone "$S_BACKBONE" \
+      ${S_PACKED:+--packed} --grad-checkpointing --epochs "$EPOCHS_S" \
       --train "/data/$MIX/train.distilled.jsonl" --calibration "/data/$MIX/calibration.jsonl" \
       --test /data/decision-v2/test.jsonl --out "/$S_OUT" --log-every 500
     ;;

@@ -92,7 +92,7 @@ def train(args, progress=None) -> dict:
         tokenizer = AutoTokenizer.from_pretrained(args.backbone)
         config = CheckpointConfig(tier=args.tier, backbone=args.backbone, head_dim=args.head_dim,
                                   max_length=args.max_length, lora_r=args.lora_r, lora_alpha=2 * args.lora_r,
-                                  head_norm=not args.no_head_norm)
+                                  head_norm=not args.no_head_norm, packed=getattr(args, "packed", False))
         model = build_model(config, load_backbone(args.backbone, args.tier, device))
         engine = Engine(model, tokenizer, config, device)
     if args.grad_checkpointing:
@@ -172,6 +172,8 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--lr", type=float, help="backbone / LoRA learning rate (default 3e-5 for S, 2e-4 for M)")
+    ap.add_argument("--packed", action="store_true",
+                    help="tier S: one sequence per request, the state read once for all its questions")
     ap.add_argument("--no-head-norm", action="store_true", help="old head without LayerNorm (only to reproduce earlier runs)")
     ap.add_argument("--head-lr", type=float, help="pointer head learning rate (default 1e-3 for S, 3e-4 for M)")
     ap.add_argument("--seed", type=int, default=0)

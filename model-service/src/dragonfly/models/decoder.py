@@ -171,9 +171,12 @@ class DecoderDecider(nn.Module):
         pad = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else (tokenizer.eos_token_id or 0)
         return collate(packed, pad), [len(p.ids) for p in packed]
 
+    def masks(self, qid, opt, position_ids):
+        """The attention mask for the backbone (graphs.DecoderGraphRunner calls this too)."""
+        return attention_mask(qid, opt, next(self.backbone.parameters()).dtype)
+
     def forward(self, input_ids, position_ids, qid, opt, query_idx, key_idx) -> torch.Tensor:
-        dtype = next(self.backbone.parameters()).dtype
-        mask = attention_mask(qid, opt, dtype)
+        mask = self.masks(qid, opt, position_ids)
         hidden = self.backbone(input_ids=input_ids, attention_mask=mask, position_ids=position_ids).last_hidden_state
         return self.pointer(hidden.reshape(-1, hidden.shape[-1]), query_idx, key_idx)
 
