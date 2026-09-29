@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580" width="1000" height="580" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Dragonfly perception models: layer by layer</title>
+  <rect width="1000" height="580" fill="#ffffff"/>
+  <text x="24" y="34" font-size="17" text-anchor="start" fill="#16181d" font-weight="600">Perception models: images and audio → text, also non-autoregressive</text>
+  <text x="24" y="54" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">each predicts all its outputs at once (CTC or one embedding) · numbers from each model's config</text>
+  <text x="20" y="92" font-size="12.5" text-anchor="start" fill="#16181d" font-weight="600">Speech (English) · Parakeet-CTC 0.6B</text>
+  <rect x="20" y="106" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="132.5" y="123.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">16 kHz audio → log-mel</text>
+  <text x="132.5" y="139.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">10 ms per frame</text>
+  <line x1="132.5" y1="148" x2="132.5" y2="161" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M128.5,160 L132.5,166 L136.5,160 Z" fill="#5d6470"/>
+  <rect x="20" y="168" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="132.5" y="185.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">conv subsampling ×8</text>
+  <text x="132.5" y="201.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">one vector per 80 ms</text>
+  <line x1="132.5" y1="210" x2="132.5" y2="223" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M128.5,222 L132.5,228 L136.5,222 Z" fill="#5d6470"/>
+  <rect x="20" y="230.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="238.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="246.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="255.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="263.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="271.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="280.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="288.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="296.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="305.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="313.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="321.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="330.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="338.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="346.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="355.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="363.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="371.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="380.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="388.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="396.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="405.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="413.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="20" y="421.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <path d="M127.25,230 h5 v200 h-5" fill="none" stroke="#5d6470"/>
+  <text x="137.25" y="334.0" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">24 layers</text>
+  <text x="137.25" y="352.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">FastConformer</text>
+  <text x="137.25" y="367.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">1,024 · 8 heads</text>
+  <text x="137.25" y="382.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">FFN 4,096</text>
+  <text x="137.25" y="397.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">+ conv module</text>
+  <line x1="70.625" y1="432" x2="70.625" y2="445" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M66.625,444 L70.625,450 L74.625,444 Z" fill="#5d6470"/>
+  <rect x="20" y="452" width="225" height="40" rx="6" fill="#ece3fb" stroke="#6b46c1"/>
+  <text x="132.5" y="469.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">CTC: a symbol per step</text>
+  <text x="132.5" y="485.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">collapse repeats, drop blanks</text>
+  <text x="265" y="92" font-size="12.5" text-anchor="start" fill="#16181d" font-weight="600">Speech (Persian) · wav2vec2 XLSR-53</text>
+  <rect x="265" y="106" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="377.5" y="123.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">16 kHz raw waveform</text>
+  <text x="377.5" y="139.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">no spectrogram</text>
+  <line x1="377.5" y1="148" x2="377.5" y2="161" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M373.5,160 L377.5,166 L381.5,160 Z" fill="#5d6470"/>
+  <rect x="265" y="168" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="377.5" y="185.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">7 conv layers, 512 ch</text>
+  <text x="377.5" y="201.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">one vector per 20 ms</text>
+  <line x1="377.5" y1="210" x2="377.5" y2="223" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M373.5,222 L377.5,228 L381.5,222 Z" fill="#5d6470"/>
+  <rect x="265" y="230.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="238.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="246.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="255.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="263.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="271.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="280.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="288.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="296.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="305.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="313.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="321.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="330.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="338.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="346.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="355.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="363.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="371.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="380.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="388.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="396.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="405.0" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="413.3" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="265" y="421.7" width="101.25" height="7.1" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <path d="M372.25,230 h5 v200 h-5" fill="none" stroke="#5d6470"/>
+  <text x="382.25" y="334.0" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">24 layers</text>
+  <text x="382.25" y="352.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">transformer</text>
+  <text x="382.25" y="367.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">1,024 · 16 heads</text>
+  <text x="382.25" y="382.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">FFN 4,096</text>
+  <line x1="315.625" y1="432" x2="315.625" y2="445" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M311.625,444 L315.625,450 L319.625,444 Z" fill="#5d6470"/>
+  <rect x="265" y="452" width="225" height="40" rx="6" fill="#ece3fb" stroke="#6b46c1"/>
+  <text x="377.5" y="469.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">CTC over 67 characters</text>
+  <text x="377.5" y="485.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">collapse repeats, drop blanks</text>
+  <text x="510" y="92" font-size="12.5" text-anchor="start" fill="#16181d" font-weight="600">Image tags · SigLIP-2 ViT-B/16</text>
+  <rect x="510" y="106" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="622.5" y="123.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">224 × 224 image</text>
+  <text x="622.5" y="139.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">16 × 16 pixel patches</text>
+  <line x1="622.5" y1="148" x2="622.5" y2="161" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M618.5,160 L622.5,166 L626.5,160 Z" fill="#5d6470"/>
+  <rect x="510" y="168" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="622.5" y="185.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">196 patch tokens × 768</text>
+  <text x="622.5" y="201.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">+ position embeddings</text>
+  <line x1="622.5" y1="210" x2="622.5" y2="223" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M618.5,222 L622.5,228 L626.5,222 Z" fill="#5d6470"/>
+  <rect x="510" y="230.0" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="246.7" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="263.3" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="280.0" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="296.7" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="313.3" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="330.0" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="346.7" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="363.3" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="380.0" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="396.7" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="510" y="413.3" width="101.25" height="15.5" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <path d="M617.25,230 h5 v200 h-5" fill="none" stroke="#5d6470"/>
+  <text x="627.25" y="334.0" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">12 layers</text>
+  <text x="627.25" y="352.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">ViT encoder</text>
+  <text x="627.25" y="367.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">768 · 12 heads</text>
+  <text x="627.25" y="382.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">MLP 3,072</text>
+  <line x1="560.625" y1="432" x2="560.625" y2="445" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M556.625,444 L560.625,450 L564.625,444 Z" fill="#5d6470"/>
+  <rect x="510" y="452" width="225" height="40" rx="6" fill="#ece3fb" stroke="#6b46c1"/>
+  <text x="622.5" y="469.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">image · tag-text embeddings</text>
+  <text x="622.5" y="485.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">every tag scored at once</text>
+  <text x="755" y="92" font-size="12.5" text-anchor="start" fill="#16181d" font-weight="600">Text in images · PP-OCRv4</text>
+  <rect x="755" y="106" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="867.5" y="130.5" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">image (long side ≤ 960 px)</text>
+  <line x1="867.5" y1="148" x2="867.5" y2="161" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M863.5,160 L867.5,166 L871.5,160 Z" fill="#5d6470"/>
+  <rect x="755" y="168" width="225" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="867.5" y="185.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">DBNet text detection</text>
+  <text x="867.5" y="201.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">probability map → line boxes</text>
+  <line x1="867.5" y1="210" x2="867.5" y2="223" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M863.5,222 L867.5,228 L871.5,222 Z" fill="#5d6470"/>
+  <rect x="755" y="230" width="225" height="200" rx="6" fill="#d8f0ec" stroke="#0f7b6c"/>
+  <text x="867.5" y="327.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">SVTR recognizer</text>
+  <text x="867.5" y="343.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">per text line, lines batched</text>
+  <line x1="867.5" y1="432" x2="867.5" y2="445" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M863.5,444 L867.5,450 L871.5,444 Z" fill="#5d6470"/>
+  <rect x="755" y="452" width="225" height="40" rx="6" fill="#ece3fb" stroke="#6b46c1"/>
+  <text x="867.5" y="469.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">CTC per line</text>
+  <text x="867.5" y="485.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">right-to-left order for Persian</text>
+  <text x="24" y="560" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">The text they produce replaces the image or audio in the request's state; the decision model then answers in its usual single pass.</text>
+</svg>

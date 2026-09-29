@@ -186,3 +186,55 @@ flowchart LR
 - Common buckets are recorded at startup, so no request pays the recording cost.
 - Tier M's LoRA adapters are merged into its weights when serving, which removes about 200 extra small multiplies per
   pass.
+
+## 11. Layers of each model
+
+Every model Dragonfly runs, drawn from its real `config.json` (regenerate with `python scripts/draw_layers.py`).
+
+![Decision models, layer by layer](images/layers-decision.svg)
+
+| | Tier S: ModernBERT-base | Tier S-large: ModernBERT-large (candidate) | Tier M: Qwen3-4B-Base |
+|---|---|---|---|
+| Layers | 22 | 28 | 36 |
+| Width | 768 | 1,024 | 2,560 |
+| Attention | 12 heads; global every 3rd layer, 128-token local window otherwise | 16 heads; same pattern | 32 query / 8 key-value heads (GQA), head size 128, QK-RMSNorm |
+| MLP | GeGLU 768 → 2×1,152 | GeGLU 1,024 → 2×2,624 | SwiGLU 2,560 → 9,728 |
+| Positions | RoPE, up to 8,192 | RoPE, up to 8,192 | RoPE, up to 32,768 |
+| Trained by Dragonfly | everything (149M) | everything (395M) | LoRA r=16 on 7 projections × 36 layers + head (~34M); the 4B base stays frozen |
+| Output | pointer head 768 → 256 | pointer head 1,024 → 256 | pointer head 2,560 → 256 |
+
+Inside one layer of each tier:
+
+```mermaid
+flowchart TB
+    subgraph S["one tier S layer (ModernBERT), × 22"]
+      direction LR
+      s1["LayerNorm"] --> s2["attention<br/>12 heads, global or<br/>128-token window"] --> s3["add residual"] --> s4["LayerNorm"] --> s5["GeGLU MLP"] --> s6["add residual"]
+    end
+    subgraph M["one tier M layer (Qwen3) + LoRA, × 36"]
+      direction LR
+      m1["RMSNorm"] --> m2["q k v<br/>+ LoRA"] --> m3["QK-RMSNorm · RoPE<br/>GQA 32/8 heads<br/>Dragonfly 4D mask"] --> m4["o proj<br/>+ LoRA"] --> m5["add residual"] --> m6["RMSNorm"] --> m7["SwiGLU<br/>gate · up · down<br/>+ LoRA"] --> m8["add residual"]
+    end
+    S ~~~ M
+```
+
+LoRA adds `B·A·x` (rank 16) beside each frozen projection. For serving, the adapters are folded into the weights
+(`merge_lora`), unless tier M specialists are installed and need to switch adapters (docs/SWARM.md).
+
+![Perception models, layer by layer](images/layers-perception.svg)
+
+## 12. The learning loop
+
+Dragonfly keeps learning from its own traffic, without anyone writing code:
+
+```mermaid
+flowchart LR
+    R["requests"] --> D["Dragonfly answers<br/>(cascade, specialists, flows)"]
+    D -- "confidence < DRAGONFLY_LOW_CONFIDENCE" --> H["human-review plugin<br/>→ Review page"]
+    H -- "labelled" --> X["export training JSONL"]
+    X --> T["train a specialist<br/>(UI → trainer-worker)<br/>or add to the next mix"]
+    T -- "held-out accuracy on the card" --> SW["swarm reloads it<br/>on every replica"]
+    SW --> D
+    D -- "still unsure" --> L["llm-escalation plugin<br/>(slow path, marked tier: llm)"]
+```
+

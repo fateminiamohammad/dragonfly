@@ -53,6 +53,17 @@ ops/deploy.sh backend ghcr.io/<owner>/dragonfly-backend:<40-char sha>
 
 The model-service keeps no request state of its own, so you can run several replicas behind the same nginx:
 
+```mermaid
+flowchart LR
+    C["clients"] --> N["nginx<br/>least_conn upstream"]
+    N --> R1["model-service 1<br/>cuda:0"]
+    N --> R2["model-service 2<br/>cuda:1"]
+    N --> R3["model-service N"]
+    R1 & R2 & R3 <--> RD[("Redis<br/>keys · usage · answer cache<br/>flows · review queue")]
+    TW["trainer-worker"] -- "PUBLISH dragonfly:specialists" --> RD
+    RD -. "reload" .-> R1 & R2 & R3
+```
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file docker/.env up -d --scale model-service=2
 ```

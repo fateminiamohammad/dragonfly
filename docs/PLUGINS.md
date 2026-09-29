@@ -5,6 +5,20 @@ plugin is a separate package that depends only on the stable API in `dragonfly.p
 
 ## Hooks
 
+```mermaid
+flowchart LR
+    Q["request"] --> OR["on_request<br/>(guardrails: redact, block)"]
+    OR --> MD["model<br/>(cascade · specialist)"]
+    MD --> LC{"confidence <<br/>DRAGONFLY_LOW_CONFIDENCE?"}
+    LC -- yes --> OLC["on_low_confidence<br/>(llm-escalation, human-review)"]
+    LC -- no --> OD
+    OLC --> OD["on_decision<br/>(business rules, webhook-audit)"]
+    OD --> A["response"]
+```
+
+Hooks run in the order plugins are listed in `DRAGONFLY_PLUGINS`. Blocking plugins run off the event loop (below).
+
+
 | Hook | When it runs | Typical use |
 |---|---|---|
 | `setup(ctx)` | once at startup | read settings from `ctx.config` |

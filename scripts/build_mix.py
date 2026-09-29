@@ -1,6 +1,7 @@
 """Build a larger, deduplicated training mix for Dragonfly and screen it against every evaluation set.
 
-  python scripts/build_mix.py        # -> data/mix-v1/{train,calibration}.jsonl + data/mix-v1/report.json
+  python scripts/build_mix.py                 # -> data/mix-v1/{train,calibration}.jsonl + report.json
+  python scripts/build_mix.py --version v2    # mix-v1 + the public sets of scripts/convert_public.py -> data/mix-v2/
 
 Sources (all public; each record keeps its source dataset's licence, see the Kev suite manifests):
   decision-v2 train                 data/decision-v2/train.jsonl          (scripts/fetch_data.py)
@@ -14,9 +15,11 @@ Screening: a training record is dropped when its normalised state (or Kev's text
 decision-v2 test/calibration sets or the typed-decisions test set (strict: the document itself must be unseen). Among
 training records, exact duplicates (same document AND same questions) are dropped; the same document asked different
 questions is kept, because it is new supervision.
-typed-decisions has no calibration split: 100 of its train cases are held out (seeded) as calibration.
+typed-decisions has no calibration split: 100 of its train cases are held out (seeded) as calibration; v2 holds out
+100 records of each public set the same way, so the temperature is fitted on every kind of data it is trained on.
 """
 
+import argparse
 import hashlib
 import json
 import random
@@ -32,6 +35,9 @@ SOURCES = [
     ("kev-longstate-v2", ROOT / "kev-suites/longstate-v2/train.jsonl"),
     ("typed-decisions", ROOT / "typed-decisions/train.jsonl"),
 ]
+PUBLIC = [(f"public-{name}", ROOT / f"public-v1/{name}.jsonl")
+          for name in ("clinc150", "hellaswag", "snli", "civil-comments", "go-emotions")]
+HOLDOUT_PER_PUBLIC_SOURCE = 100
 SCREEN = [ROOT / "decision-v2/test.jsonl", ROOT / "decision-v2/calibration.jsonl", ROOT / "typed-decisions/test.jsonl"]
 TD_CALIBRATION_CASES = 100
 
@@ -67,16 +73,20 @@ def read(path: Path) -> list[dict]:
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", choices=["v1", "v2"], default="v1")
+    version = ap.parse_args().version
+    sources = SOURCES + (PUBLIC if version == "v2" else [])
     screened: set[str] = set()
     for path in SCREEN:
         for r in read(path):
             screened |= keys(r)
 
-    out = ROOT / "mix-v1"
+    out = ROOT / f"mix-{version}"
     out.mkdir(parents=True, exist_ok=True)
     train, calibration, report = [], [], {}
     seen: set[str] = set()
-    for name, path in SOURCES:
+    for name, path in sources:
         records = read(path)
         if name == "typed-decisions":
             rng = random.Random(20260928)
@@ -84,6 +94,12 @@ def main():
             calibration += records[:TD_CALIBRATION_CASES]
             screened |= set().union(*(keys(r) for r in records[:TD_CALIBRATION_CASES]))
             records = records[TD_CALIBRATION_CASES:]
+        elif name.startswith("public-"):
+            rng = random.Random(name)
+            rng.shuffle(records)
+            calibration += records[:HOLDOUT_PER_PUBLIC_SOURCE]
+            screened |= set().union(*(keys(r) for r in records[:HOLDOUT_PER_PUBLIC_SOURCE]))
+            records = records[HOLDOUT_PER_PUBLIC_SOURCE:]
         kept = dropped_test = dropped_dup = 0
         types = Counter()
         for r in records:

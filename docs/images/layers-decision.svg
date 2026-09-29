@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 720" width="980" height="720" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Dragonfly decision models: layer by layer</title>
+  <rect width="980" height="720" fill="#ffffff"/>
+  <text x="24" y="34" font-size="17" text-anchor="start" fill="#16181d" font-weight="600">Decision models: every layer, one forward pass</text>
+  <text x="24" y="54" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">numbers from each model's config.json · teal = transformer layers · orange = trained by Dragonfly · grey = frozen</text>
+  <text x="24" y="92" font-size="14" text-anchor="start" fill="#16181d" font-weight="600">Tier S · ModernBERT-base (149M, all weights trained)</text>
+  <rect x="24" y="106" width="440" height="44" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="244.0" y="125.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">[CLS] question · options · [SEP] state</text>
+  <text x="244.0" y="141.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">one row per question · up to 1,536 tokens</text>
+  <line x1="244.0" y1="152" x2="244.0" y2="165" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M240.0,164 L244.0,170 L248.0,164 Z" fill="#5d6470"/>
+  <rect x="24" y="172" width="440" height="40" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="244.0" y="189.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">token embeddings 50,368 × 768</text>
+  <text x="244.0" y="205.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">RoPE positions, no learned position table</text>
+  <line x1="244.0" y1="214" x2="244.0" y2="227" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M240.0,226 L244.0,232 L248.0,226 Z" fill="#5d6470"/>
+  <rect x="24" y="234.0" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="245.4" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="256.7" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="268.1" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="279.5" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="290.8" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="302.2" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="313.5" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="324.9" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="336.3" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="347.6" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="359.0" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="370.4" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="381.7" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="393.1" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="404.5" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="415.8" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="427.2" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="438.5" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="449.9" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="461.3" width="198.0" height="10.2" rx="1.5" fill="#d8f0ec" stroke="#0f7b6c" stroke-width="0.6"/>
+  <rect x="24" y="472.6" width="198.0" height="10.2" rx="1.5" fill="#b9e3db" stroke="#0f7b6c" stroke-width="0.6"/>
+  <path d="M228.0,234 h5 v250 h-5" fill="none" stroke="#5d6470"/>
+  <text x="238.0" y="363.0" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">22 layers</text>
+  <text x="238.0" y="381.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">pre-norm LayerNorm → attention</text>
+  <text x="238.0" y="396.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">12 heads × 64</text>
+  <text x="238.0" y="411.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">dark: global attention (every 3rd)</text>
+  <text x="238.0" y="426.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">light: local, 128-token window</text>
+  <text x="238.0" y="441.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">GeGLU MLP 768 → 2×1,152 → 768</text>
+  <text x="238.0" y="456.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">unpadded (no work on padding)</text>
+  <line x1="123.0" y1="486" x2="123.0" y2="499" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M119.0,498 L123.0,504 L127.0,498 Z" fill="#5d6470"/>
+  <rect x="24" y="506" width="440" height="44" rx="6" fill="#fdebd3" stroke="#c77700"/>
+  <text x="244.0" y="525.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">pointer head: q = W·h[question], k = W·h[option]</text>
+  <text x="244.0" y="541.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">768 → 256 · LayerNorm · q·k / √256</text>
+  <line x1="244.0" y1="552" x2="244.0" y2="565" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M240.0,564 L244.0,570 L248.0,564 Z" fill="#5d6470"/>
+  <rect x="24" y="572" width="440" height="40" rx="6" fill="#ece3fb" stroke="#6b46c1"/>
+  <text x="244.0" y="589.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">softmax over the options / T</text>
+  <text x="244.0" y="605.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">calibrated probabilities</text>
+  <text x="510" y="92" font-size="14" text-anchor="start" fill="#16181d" font-weight="600">Tier M · Qwen3-4B-Base (frozen) + LoRA r=16</text>
+  <rect x="510" y="106" width="446" height="44" rx="6" fill="#dbe7fb" stroke="#3b6fd8"/>
+  <text x="733.0" y="125.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">[state][q1][opts…][q2][opts…] packed</text>
+  <text x="733.0" y="141.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">custom 4D mask · options share position ids</text>
+  <line x1="733.0" y1="152" x2="733.0" y2="165" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M729.0,164 L733.0,170 L737.0,164 Z" fill="#5d6470"/>
+  <rect x="510" y="172" width="446" height="40" rx="6" fill="#eceef2" stroke="#8a919c"/>
+  <text x="733.0" y="189.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">token embeddings 151,936 × 2,560</text>
+  <text x="733.0" y="205.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">RoPE positions (θ from config)</text>
+  <line x1="733.0" y1="214" x2="733.0" y2="227" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M729.0,226 L733.0,232 L737.0,226 Z" fill="#5d6470"/>
+  <rect x="510" y="234.0" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="240.9" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="247.9" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="254.8" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="261.8" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="268.7" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="275.7" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="282.6" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="289.6" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="296.5" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="303.4" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="310.4" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="317.3" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="324.3" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="331.2" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="338.2" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="345.1" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="352.1" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="359.0" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="365.9" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="372.9" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="379.8" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="386.8" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="393.7" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="400.7" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="407.6" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="414.6" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="421.5" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="428.4" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="435.4" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="442.3" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="449.3" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="456.2" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="463.2" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="470.1" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <rect x="510" y="477.1" width="200.70000000000002" height="5.7" rx="1.5" fill="#eceef2" stroke="#8a919c" stroke-width="0.6"/>
+  <path d="M716.7,234 h5 v250 h-5" fill="none" stroke="#5d6470"/>
+  <text x="726.7" y="363.0" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">36 layers</text>
+  <text x="726.7" y="381.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">RMSNorm → grouped-query attention</text>
+  <text x="726.7" y="396.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">32 query / 8 key-value heads × 128</text>
+  <text x="726.7" y="411.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">QK-RMSNorm · RoPE</text>
+  <text x="726.7" y="426.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">RMSNorm → SwiGLU MLP 2,560 → 9,728 → 2,560</text>
+  <text x="726.7" y="441.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">LoRA (orange, r=16) beside q k v o</text>
+  <text x="726.7" y="456.0" font-size="11" text-anchor="start" fill="#5d6470" font-weight="normal">and gate up down: 7 per layer, 252 total</text>
+  <line x1="610.35" y1="486" x2="610.35" y2="499" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M606.35,498 L610.35,504 L614.35,498 Z" fill="#5d6470"/>
+  <rect x="510" y="506" width="446" height="44" rx="6" fill="#fdebd3" stroke="#c77700"/>
+  <text x="733.0" y="525.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">pointer head: last token of question vs option</text>
+  <text x="733.0" y="541.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">2,560 → 256 · LayerNorm · q·k / √256</text>
+  <line x1="733.0" y1="552" x2="733.0" y2="565" stroke="#5d6470" stroke-width="1.4"/>
+  <path d="M729.0,564 L733.0,570 L737.0,564 Z" fill="#5d6470"/>
+  <rect x="510" y="572" width="446" height="40" rx="6" fill="#ece3fb" stroke="#6b46c1"/>
+  <text x="733.0" y="589.0" font-size="12.5" text-anchor="middle" fill="#16181d" font-weight="normal">softmax over the options / T</text>
+  <text x="733.0" y="605.0" font-size="11" text-anchor="middle" fill="#5d6470" font-weight="normal">order-invariant by construction</text>
+  <rect x="698.7" y="235.0" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="241.9" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="248.9" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="255.8" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="262.8" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="269.7" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="276.7" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="283.6" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="290.6" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="297.5" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="304.4" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="311.4" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="318.3" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="325.3" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="332.2" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="339.2" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="346.1" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="353.1" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="360.0" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="366.9" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="373.9" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="380.8" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="387.8" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="394.7" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="401.7" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="408.6" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="415.6" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="422.5" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="429.4" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="436.4" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="443.3" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="450.3" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="457.2" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="464.2" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="471.1" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <rect x="698.7" y="478.1" width="8" height="3.7" rx="1" fill="#fdebd3" stroke="#c77700" stroke-width="0.6"/>
+  <text x="24" y="700" font-size="12" text-anchor="start" fill="#5d6470" font-weight="normal">Tier S answers first; questions below the confidence threshold (0.70) are asked again to tier M. Both heads score all options in parallel: no tokens are generated.</text>
+</svg>

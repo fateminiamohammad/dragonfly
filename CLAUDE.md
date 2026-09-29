@@ -163,6 +163,7 @@ python scripts/e2e_media.py --password <ADMIN_PASSWORD>                         
 - [docs/API.md](docs/API.md): `/v1` and `/api` endpoints, request and response shapes, errors, key and usage flow
 - [docs/PERCEPTION.md](docs/PERCEPTION.md): images and audio, models, API, limits, measured speed
 - [docs/PLUGINS.md](docs/PLUGINS.md): writing in-process and gRPC plugins, closed-source delivery
+- [docs/TRAINING.md](docs/TRAINING.md): the training recipe (`scripts/train_recipe.sh`), data mixes, settings, adopting a model
 - [docs/SWARM.md](docs/SWARM.md): specialist dragonflies, adapter switching, `model: "auto"` routing
 - [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md): running with and without Docker, tests, Windows gotchas
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production server, TLS, deploys with rollback, monitoring, security
