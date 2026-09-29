@@ -4,7 +4,8 @@ Configuration is by environment (see docker/.env.example):
   DRAGONFLY_CHECKPOINT     checkpoint directory; or base:<encoder> / base-m:<decoder> for an untrained head
                            (default base:answerdotai/ModernBERT-base)
   DRAGONFLY_CHECKPOINT_M   optional second (tier M) checkpoint: enables the S -> M cascade
-  DRAGONFLY_CASCADE_THRESHOLD  confidence below which S's answer is re-asked to M (default 0.8)
+  DRAGONFLY_CASCADE_THRESHOLD  confidence below which S's answer is re-asked to M (default 0.8); or per question
+                           type: noul=0.6,choice=0.7,score=0.8 (scripts/tune_cascade.py --per-type)
   DRAGONFLY_DEVICE         cuda | cpu (default: cuda when available)
   DRAGONFLY_CUDA_GRAPHS    1 (default) = replay forward passes as CUDA graphs on GPU: ~4-5x lower latency; 0 = off
   DRAGONFLY_WARMUP         1 (default) = capture common graph shapes at startup (no slow first requests)
@@ -38,7 +39,7 @@ import uvicorn
 from ..auth import KeyStore
 from ..batching import Worker
 from ..cache import AnswerCache, RedisAnswerCache, model_namespace
-from ..engine import Cascade, Engine
+from ..engine import Cascade, Engine, parse_threshold
 from ..flows import RedisFlowStore
 from ..media import MediaResolver
 from ..plugins import PluginHost
@@ -125,8 +126,8 @@ def build_app():
         adapters = specialists is not None and has_m_specialists(Path(specialists))
         large = load_engine(os.environ["DRAGONFLY_CHECKPOINT_M"], device, merge=not adapters)
         bank = AdapterBank(large) if adapters else None
-        engine = Cascade(engine, large, float(os.environ.get("DRAGONFLY_CASCADE_THRESHOLD", "0.8")))
-        log.info("cascade S -> M enabled at confidence < %.2f", engine.threshold)
+        engine = Cascade(engine, large, parse_threshold(os.environ.get("DRAGONFLY_CASCADE_THRESHOLD", "0.8")))
+        log.info("cascade S -> M enabled at confidence < %s", engine.threshold)
     if specialists:
         engine = Swarm(engine, specialists, max_loaded=int(os.environ.get("DRAGONFLY_SWARM_MAX_LOADED", "4")),
                        route_threshold=float(os.environ.get("DRAGONFLY_ROUTE_THRESHOLD", "0.5")),

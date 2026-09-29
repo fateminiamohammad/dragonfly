@@ -67,8 +67,7 @@ def summarize(probs: list[list[float]], rows: list[dict]) -> dict:
 def evaluate(engine: Engine, records: list[dict], order_check: bool = True) -> dict:
     rows, states = question_rows(records)
     logits = collect_logits(engine, rows, states)
-    t = engine.config.temperature
-    probs = [torch.softmax(z / t, -1).tolist() for z in logits]
+    probs = [torch.softmax(z / engine.temperature_for(q["qtype"]), -1).tolist() for z, q in zip(logits, rows)]
     result = {"overall": summarize(probs, rows), "by_source": {}, "by_type": {}}
     for key, field in (("by_source", "source"), ("by_type", "qtype")):
         groups = defaultdict(list)

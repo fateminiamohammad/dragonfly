@@ -27,12 +27,24 @@ def main() -> None:
     ap.add_argument("--calibration", required=True)
     ap.add_argument("--test")
     ap.add_argument("--device")
+    ap.add_argument("--per-type", action="store_true",
+                    help="also fit one temperature per question type (types with >= 100 questions)")
     a = ap.parse_args()
 
     engine = Engine.load(a.checkpoint, a.device)
     rows, states = fitting(engine, *question_rows(load_records(a.calibration)))
-    engine.config.temperature = fit_temperature(collect_logits(engine, rows, states), [q["label"] for q in rows])
+    logits = collect_logits(engine, rows, states)
+    engine.config.temperature = fit_temperature(logits, [q["label"] for q in rows])
     log.info("fitted temperature %.3f on %d questions", engine.config.temperature, len(rows))
+    engine.config.temperature_by_type = None
+    if a.per_type:
+        by_type = {}
+        for qtype in sorted({q["qtype"] for q in rows}):
+            idx = [i for i, q in enumerate(rows) if q["qtype"] == qtype]
+            if len(idx) >= 100:
+                by_type[qtype] = fit_temperature([logits[i] for i in idx], [rows[i]["label"] for i in idx])
+        engine.config.temperature_by_type = by_type or None
+        log.info("fitted per-type temperatures %s", by_type)
     root = Path(a.checkpoint)
     (root / "config.json").write_text(json.dumps(asdict(engine.config), indent=2))
 

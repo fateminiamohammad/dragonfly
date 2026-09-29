@@ -37,6 +37,9 @@ class CheckpointConfig:
     head_norm: bool = False  # LayerNorm before the pointer-head projections (on for new trainings: stabler)
     packed: bool = False  # tier S: one sequence per request, the state read once (models/encoder.py, packed tier S)
     temperature: float = 1.0
+    # optional per question type ("noul" / "choice" / "score"), fitted by dragonfly-calibrate --per-type; types not
+    # listed use `temperature`
+    temperature_by_type: dict | None = None
     trained: bool = False
 
 
@@ -205,13 +208,15 @@ class Engine:
                     continue
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.autocast):
                     logits, tokens[i] = self.model.logits_cached(self.tokenizer, rec, self.state_cache)
-                p = torch.softmax(logits / self.config.temperature, dim=-1).cpu()
+                p = torch.softmax(logits / self.temperatures(rec["questions"], logits), dim=-1).cpu()
                 out[i] = [p[j, : len(q["options"])].tolist() for j, q in enumerate(rec["questions"])]
         for sub in self.chunks([records[i] for i in batched]):
             idx = [batched[i] for i in sub]
             chunk = [records[i] for i in idx]
             batch, n_tokens = self.encode(chunk)
-            p = torch.softmax(self.logits(batch) / self.config.temperature, dim=-1).cpu()
+            logits = self.logits(batch)
+            p = torch.softmax(logits / self.temperatures([q for r in chunk for q in r["questions"]], logits),
+                              dim=-1).cpu()
             row = 0
             for i, rec, n in zip(idx, chunk, n_tokens):
                 tokens[i] = n
@@ -220,11 +225,34 @@ class Engine:
                     row += 1
         return out, tokens, [[self.config.tier] * len(r["questions"]) for r in records]
 
+    def temperature_for(self, qtype: str) -> float:
+        by_type = self.config.temperature_by_type or {}
+        return by_type.get(qtype, self.config.temperature)
+
+    def temperatures(self, questions: list[dict], like: torch.Tensor) -> torch.Tensor | float:
+        """(Q, 1) temperatures for these questions (one per question type), or the single temperature."""
+        if not self.config.temperature_by_type:
+            return self.config.temperature
+        return torch.tensor([[self.temperature_for(q.get("qtype", ""))] for q in questions],
+                            dtype=like.dtype, device=like.device)
+
     def describe(self) -> dict:
         c = self.config
         return {"tier": c.tier, "backbone": c.backbone, "trained": c.trained, "temperature": c.temperature,
+                "temperature_by_type": c.temperature_by_type,
                 "device": self.device, "cuda_graphs": self.graphs.stats() if self.graphs else None,
                 "state_cache": self.state_cache.stats() if self.state_cache else None}
+
+
+def parse_threshold(text: str) -> float | dict:
+    """"0.7" -> 0.7; "noul=0.6,choice=0.7,score=0.8" -> per question type ("default=" for the rest)."""
+    if "=" not in text:
+        return float(text)
+    out = {}
+    for part in text.split(","):
+        key, _, value = part.partition("=")
+        out[key.strip()] = float(value)
+    return out
 
 
 class Cascade:
@@ -233,19 +261,25 @@ class Cascade:
 
     Confidence is only meaningful when S is calibrated (temperature fitted), which dragonfly-train does."""
 
-    def __init__(self, small: Engine, large: Engine, threshold: float = 0.8):
+    def __init__(self, small: Engine, large: Engine, threshold: float | dict = 0.8):
+        """threshold: one value, or one per question type {"noul": 0.6, "choice": 0.7, "score": 0.8, "default": 0.7}."""
         self.small, self.large, self.threshold = small, large, threshold
         self.config = small.config
         self.device = small.device
         self.escalated = 0
         self.answered = 0
 
+    def threshold_for(self, qtype: str) -> float:
+        if isinstance(self.threshold, dict):
+            return self.threshold.get(qtype, self.threshold.get("default", 0.8))
+        return self.threshold
+
     def probs(self, records: list[dict]):
         probs, tokens, tiers = self.small.probs(records)
         hard = []  # (record index, question index)
         for i, rec in enumerate(records):
             for j, q in enumerate(rec["questions"]):
-                if question_confidence(q["qtype"], probs[i][j]) < self.threshold:
+                if question_confidence(q["qtype"], probs[i][j]) < self.threshold_for(q["qtype"]):
                     hard.append((i, j))
         self.answered += sum(len(r["questions"]) for r in records)
         self.escalated += len(hard)
