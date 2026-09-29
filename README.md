@@ -289,6 +289,7 @@ See [docs/PLUGINS.md](docs/PLUGINS.md), [plugins/example-python](plugins/example
 | [docs/API.md](docs/API.md) | `/v1` and `/api` endpoints, request and response shapes, errors |
 | [docs/PERCEPTION.md](docs/PERCEPTION.md) | images and audio: models, API, limits, measured speed |
 | [docs/PLUGINS.md](docs/PLUGINS.md) | in-process and gRPC plugins, closed-source delivery |
+| [sdk/python](sdk/python), [sdk/typescript](sdk/typescript) | client SDKs: questions from types, batch, streaming, `max_error` |
 | [docs/TRAINING.md](docs/TRAINING.md) | training recipe, data mixes, how a new model is adopted |
 | [docs/SWARM.md](docs/SWARM.md) | the swarm: specialist models behind one endpoint, `"model": "auto"` routing |
 | [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) | running locally, tests, Windows gotchas |

@@ -1,0 +1,21 @@
+{
+  "name": "@dragonfly/client",
+  "version": "0.1.0",
+  "description": "TypeScript client for Dragonfly (and any TypeSafe System One API): typed decisions in milliseconds",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit --strict --target ES2022 --module ES2022 --moduleResolution bundler --lib ES2022,DOM --skipLibCheck src/index.test.ts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

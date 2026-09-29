@@ -119,6 +119,7 @@ python scripts/e2e_media.py --password <ADMIN_PASSWORD>                         
 | `proto/dragonfly/plugin/v1/plugin.proto` | gRPC plugin protocol |
 | `plugins/example-python`, `plugins/example-grpc` | example plugins |
 | `bench/`, `scripts/` | benchmarks; `fetch_data.py`, `distill_targets.py`, `tune_cascade.py`, `e2e_media.py`, `publish_hf.py` |
+| `sdk/python`, `sdk/typescript` | client SDKs (`dragonfly-client`, `@dragonfly/client`), tested against the real API |
 | `docker-compose.{local,dev,prod}.yml`, `docker/.env.example`, `nginx/`, `ops/` | deployment |
 | `data/`, `runs/` | datasets and checkpoints (gitignored) |
 

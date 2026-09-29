@@ -3,9 +3,9 @@ name: model-service CI
 on:
   push:
     branches: [main]
-    paths: ["model-service/**", "plugins/**", "proto/**", "bench/**", "scripts/**", ".github/workflows/model-service-ci.yml"]
+    paths: ["model-service/**", "plugins/**", "proto/**", "bench/**", "scripts/**", "sdk/python/**", ".github/workflows/model-service-ci.yml"]
   pull_request:
-    paths: ["model-service/**", "plugins/**", "proto/**", "bench/**", "scripts/**", ".github/workflows/model-service-ci.yml"]
+    paths: ["model-service/**", "plugins/**", "proto/**", "bench/**", "scripts/**", "sdk/python/**", ".github/workflows/model-service-ci.yml"]
   workflow_dispatch:
 
 concurrency:
@@ -30,10 +30,11 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev]"
           pip install -e ../plugins/example-python
+          pip install -e ../sdk/python
       - name: Lint
-        run: ruff check --config pyproject.toml src tests ../plugins ../bench ../scripts
+        run: ruff check --config pyproject.toml src tests ../plugins ../bench ../scripts ../sdk/python
       - name: Test
-        run: pytest -q
+        run: pytest -q && pytest -q ../sdk/python/tests
 
   image:
     runs-on: ubuntu-latest
