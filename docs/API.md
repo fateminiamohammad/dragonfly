@@ -83,6 +83,21 @@ The promise holds for data like the calibration data; `fit_risk.py` reports the 
 to each target. A request without `max_error` is unchanged. Answers from a specialist are never `decided` (the table
 was fitted on the general model). Without a table, `max_error` returns 400.
 
+### Anytime answers (`?stream=true`)
+
+`POST /v1/systemone?stream=true` answers as Server-Sent Events. That's for real-time loops that should act on the
+first answer and refine later:
+
+```
+event: answers   {"answers": {...every question, tier S...}, "latency_ms": 6.1, "final": false}
+event: update    {"answers": {...only the questions tier M re-answered...}, "latency_ms": 31.0, "final": false}
+event: done      {the normal response body, after plugins, "final": true}
+```
+
+`update` is skipped when tier S was sure of everything. Without a cascade, for a specialist, or with images/audio to
+resolve first, there is a single `done` event. Errors arrive as `event: error {"status", "detail"}`. Streaming
+bypasses the answer cache.
+
 ### More than 255 options (two stages)
 
 A `choice` question may have up to 10,000 options (a product catalog, 2,000 support teams). Above 255 it is answered

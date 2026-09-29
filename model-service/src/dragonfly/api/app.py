@@ -6,13 +6,14 @@ own name. Each answer also carries `tier` (which model answered it); clients tha
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import ValidationError
 
@@ -20,11 +21,12 @@ from .. import __version__, twostage
 from ..auth import KeyStore
 from ..batching import Worker
 from ..cache import AnswerCache, record_key
+from ..engine import Cascade
 from ..flows import FlowError, mermaid, run_flow
 from ..media import MediaError, MediaResolver, find_media
 from ..plugins import PluginError, PluginHost
 from ..risk import RiskTable
-from ..schema import MAX_OPTIONS, MODEL_NAMES, DecideRequest, render, to_answers, to_record
+from ..schema import MAX_OPTIONS, MODEL_NAMES, DecideRequest, question_confidence, render, to_answers, to_record
 
 REQUESTS = Counter("dragonfly_requests_total", "Decision requests", ["status"])
 QUESTIONS = Counter("dragonfly_questions_total", "Questions answered", ["type", "tier"])
@@ -84,9 +86,74 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
         resp.headers["server-timing"] = f"app;dur={(time.perf_counter() - started) * 1000:.2f}"
         return resp
 
-    async def decide(req: DecideRequest, request: Request, background: BackgroundTasks) -> dict:
+    async def decide(req: DecideRequest, request: Request, background: BackgroundTasks, stream: bool = False):
         no_cache = "no-cache" in request.headers.get("cache-control", "")
+        if stream:
+            return StreamingResponse(stream_decision(req, request.state.key_digest, background),
+                                     media_type="text/event-stream", headers={"cache-control": "no-cache"})
         return await decide_one(req, no_cache, request.state.key_digest, background)
+
+    def cascade_of(engine):
+        """The general S -> M cascade behind the worker (directly or inside the swarm), or None."""
+        engine = getattr(engine, "general", engine)
+        return engine if isinstance(engine, Cascade) else None
+
+    async def stream_decision(req: DecideRequest, key_digest: str | None, background: BackgroundTasks):
+        """Anytime answers (SSE): tier S's answers at once, tier M's upgrades for the unsure ones, then the final body
+        (after plugins). A caller in a real-time loop acts on the first event; later events only refine it."""
+        def event(name: str, data: dict) -> str:
+            payload = json.dumps(data, separators=(",", ":"))
+            return f"event: {name}\ndata: {payload}\n\n"
+
+        cascade = cascade_of(worker.engine)
+        if cascade is None or find_media(req.state) or (swarm is not None and req.model not in MODEL_NAMES):
+            try:  # nothing to refine (no cascade, a specialist, or media to resolve first): one final event
+                yield event("done", await decide_one(req, True, key_digest, background))
+            except HTTPException as e:
+                yield event("error", {"status": e.status_code, "detail": e.detail})
+            return
+        started = time.perf_counter()
+        try:
+            req = await plugins.aon_request(req)
+            req, two_stage, stage1_tokens = await prune_large_choices(req, False)
+            record, meta = to_record(req)
+            probs, stats = await asyncio.wrap_future(worker.submit({**record, "no_escalate": True}))
+            answers = to_answers(probs, meta)
+            for m in meta:
+                answers[m["id"]]["tier"] = "S"
+            yield event("answers", {"answers": answers, "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+                                    "final": False})
+            hard = [j for j, (q, p) in enumerate(zip(record["questions"], probs))
+                    if question_confidence(q["qtype"], p) < cascade.threshold_for(q["qtype"])]
+            tokens = stats["tokens"] + stage1_tokens
+            if hard:
+                sub = {"state": record["state"], "questions": [record["questions"][j] for j in hard], "force_large": True}
+                probs2, stats2 = await asyncio.wrap_future(worker.submit(sub))
+                tokens += stats2["tokens"]
+                for j, p in zip(hard, probs2):
+                    probs[j] = p
+                upgraded = to_answers([probs[j] for j in hard], [meta[j] for j in hard])
+                for a in upgraded.values():
+                    a["tier"] = "M"
+                answers.update(upgraded)
+                yield event("update", {"answers": upgraded, "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+                                       "final": False})
+            if req.max_error is not None:
+                apply_risk(req, answers, probs, meta, None)
+            for qid, info in two_stage.items():
+                answers[qid]["two_stage"] = info
+            body = {"model": req.model, "answers": answers, "usage": {"input_tokens": tokens, "output_tokens": 0},
+                    "latency_ms": round((time.perf_counter() - started) * 1000, 2), "cached": False, "final": True}
+            body = await plugins.aon_decision(req, body)
+            background.add_task(keys.record_usage, key_digest, len(meta), tokens)
+            REQUESTS.labels("ok").inc()
+            yield event("done", body)
+        except (PluginError, MediaError) as e:
+            yield event("error", {"status": e.status, "detail": str(e)})
+        except HTTPException as e:
+            yield event("error", {"status": e.status_code, "detail": e.detail})
+        except ValueError as e:
+            yield event("error", {"status": 422, "detail": str(e)})
 
     async def decide_one(req: DecideRequest, no_cache: bool, key_digest: str | None,
                          background: BackgroundTasks, low_priority: bool = False) -> dict:

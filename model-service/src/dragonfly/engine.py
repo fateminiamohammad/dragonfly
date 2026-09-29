@@ -275,6 +275,20 @@ class Cascade:
         return self.threshold
 
     def probs(self, records: list[dict]):
+        """Records flagged "force_large" go to tier M directly (streaming's second step), "no_escalate" ones stay on
+        tier S; the rest run the cascade."""
+        forced = [i for i, r in enumerate(records) if r.get("force_large")]
+        if forced:
+            rest = [i for i in range(len(records)) if i not in set(forced)]
+            out: list = [None] * len(records), [0] * len(records), [None] * len(records)
+            for idx, run in ((forced, self.large.probs), (rest, self._cascade)):
+                if idx:
+                    for i, p, t, tr in zip(idx, *run([records[i] for i in idx])):
+                        out[0][i], out[1][i], out[2][i] = p, t, tr
+            return out
+        return self._cascade(records)
+
+    def _cascade(self, records: list[dict]):
         probs, tokens, tiers = self.small.probs(records)
         hard = []  # (record index, question index)
         for i, rec in enumerate(records):
