@@ -278,6 +278,8 @@ class Cascade:
         probs, tokens, tiers = self.small.probs(records)
         hard = []  # (record index, question index)
         for i, rec in enumerate(records):
+            if rec.get("no_escalate"):  # e.g. stage 1 of a two-stage choice: tier S prunes, stage 2 may escalate
+                continue
             for j, q in enumerate(rec["questions"]):
                 if question_confidence(q["qtype"], probs[i][j]) < self.threshold_for(q["qtype"]):
                     hard.append((i, j))

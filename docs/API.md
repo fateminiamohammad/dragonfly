@@ -83,6 +83,21 @@ The promise holds for data like the calibration data; `fit_risk.py` reports the 
 to each target. A request without `max_error` is unchanged. Answers from a specialist are never `decided` (the table
 was fitted on the general model). Without a table, `max_error` returns 400.
 
+### More than 255 options (two stages)
+
+A `choice` question may have up to 10,000 options (a product catalog, 2,000 support teams). Above 255 it is answered
+in two stages:
+
+1. **Prune:** tier S scores the options in chunks of up to 255 in one request. Every chunk also carries the first
+   option as an anchor, which puts all chunks on one scale (exact when options can't see each other, as in tier M
+   and packed tier S).
+2. **Decide:** the 32 best options are asked again through the normal pipeline (cascade, plugins, calibration).
+
+The answer's `probabilities` cover those 32 finalists, and it gains
+`"two_stage": {"options": 2000, "candidates": 32, "pruned_mass": 0.013}`. `pruned_mass` is stage 1's estimate of the
+probability left in the dropped options. `usage.input_tokens` includes both stages. `score` questions stay at 255
+levels.
+
 ### Batch / map-reduce (`/v1/batch`)
 
 Many decisions in one call, e.g. every row of a table:

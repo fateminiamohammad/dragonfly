@@ -14,7 +14,8 @@ from typing import Any, Literal, Union
 from pydantic import BaseModel, Field, model_validator
 
 JSONContent = Union[str, dict, list, int, float, bool, None]
-MAX_OPTIONS = 255
+MAX_OPTIONS = 255  # per forward pass
+MAX_OPTIONS_TWO_STAGE = 10_000  # choice questions above MAX_OPTIONS: pruned first, then decided (twostage.py)
 MODEL_NAMES = ("dragonfly-latest", "jev-latest", "kev-latest")  # SDK defaults, so an unconfigured client works
 
 
@@ -31,8 +32,9 @@ class Choice(BaseModel):
 
     @model_validator(mode="after")
     def _check(self):
-        if not 1 <= len(self.criteria) <= MAX_OPTIONS:
-            raise ValueError(f"criteria must have 1..{MAX_OPTIONS} options")
+        # above MAX_OPTIONS the question is answered in two stages (dragonfly/twostage.py)
+        if not 1 <= len(self.criteria) <= MAX_OPTIONS_TWO_STAGE:
+            raise ValueError(f"criteria must have 1..{MAX_OPTIONS_TWO_STAGE} options")
         return self
 
 

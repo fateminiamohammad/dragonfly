@@ -45,10 +45,15 @@ def test_confidence_bounds():
     assert score_confidence([1 / 3] * 3) == pytest.approx(0, abs=1e-9)
 
 
-def test_rejects_too_many_options():
-    bad = {"state": "x", "questions": {"q": {"type": "choice", "criteria": {str(i): None for i in range(256)}}}}
+def test_option_limits():
+    # a choice may have up to 10,000 options (answered in two stages above 255); a score stays within one pass
+    DecideRequest.model_validate({"state": "x", "questions": {"q": {"type": "choice",
+                                                                   "criteria": {str(i): None for i in range(256)}}}})
+    bad = {"state": "x", "questions": {"q": {"type": "choice", "criteria": {str(i): None for i in range(10001)}}}}
     with pytest.raises(ValidationError):
         DecideRequest.model_validate(bad)
+    with pytest.raises(ValidationError):
+        DecideRequest.model_validate({"state": "x", "questions": {"q": {"type": "score", "criteria": list(range(256))}}})
 
 
 def test_render_lists_and_scalars():

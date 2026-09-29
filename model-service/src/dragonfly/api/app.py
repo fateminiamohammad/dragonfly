@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import ValidationError
 
-from .. import __version__
+from .. import __version__, twostage
 from ..auth import KeyStore
 from ..batching import Worker
 from ..cache import AnswerCache, record_key
@@ -24,7 +24,7 @@ from ..flows import FlowError, mermaid, run_flow
 from ..media import MediaError, MediaResolver, find_media
 from ..plugins import PluginError, PluginHost
 from ..risk import RiskTable
-from ..schema import MODEL_NAMES, DecideRequest, render, to_answers, to_record
+from ..schema import MAX_OPTIONS, MODEL_NAMES, DecideRequest, render, to_answers, to_record
 
 REQUESTS = Counter("dragonfly_requests_total", "Decision requests", ["status"])
 QUESTIONS = Counter("dragonfly_questions_total", "Questions answered", ["type", "tier"])
@@ -100,6 +100,7 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 state, media_ms = await media.resolve(req.state)
                 req = req.model_copy(update={"state": state})
             req = await plugins.aon_request(req)
+            req, two_stage, stage1_tokens = await prune_large_choices(req, low_priority)
             record, meta = to_record(req)
             if swarm is not None and req.model not in MODEL_NAMES:
                 record["specialist"] = req.model
@@ -123,10 +124,12 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                 answers[m["id"]]["tier"] = tier
             if req.max_error is not None:
                 apply_risk(req, answers, probs, meta, stats.get("specialist"))
+            for qid, info in two_stage.items():
+                answers[qid]["two_stage"] = info
             body = {
                 "model": req.model,
                 "answers": answers,
-                "usage": {"input_tokens": stats["tokens"], "output_tokens": 0, "media_ms": media_ms},
+                "usage": {"input_tokens": stats["tokens"] + stage1_tokens, "output_tokens": 0, "media_ms": media_ms},
                 "latency_ms": latency,
                 "cached": bool(hit),
             }
@@ -161,6 +164,39 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
                               risk={"max_error": req.max_error, "note": f"no risk table for specialist {specialist}"})
             else:
                 risk.apply(answer, p, m["keys"], m["type"], req.max_error)
+
+    async def prune_large_choices(req: DecideRequest, low_priority: bool):
+        """Stage 1 of every choice question above MAX_OPTIONS: keep its best FINALISTS options (twostage.py)."""
+        big = {qid: q for qid, q in req.questions.items() if q.type == "choice" and len(q.criteria) > MAX_OPTIONS}
+        if not big:
+            return req, {}, 0
+        size = MAX_OPTIONS - 1
+        while True:  # a chunk must fit the model's token budget: halve it until it does
+            questions, owners = {}, []
+            for qid, q in big.items():
+                for c, keys in enumerate(twostage.chunks(list(q.criteria), size)):
+                    questions[f"{qid}#{c}"] = {"type": "choice", "instructions": q.instructions,
+                                               "criteria": {k: q.criteria[k] for k in keys}}
+                    owners.append((qid, keys))
+            stage1 = DecideRequest.model_validate({"state": req.state, "model": req.model, "questions": questions})
+            record, _ = to_record(stage1)
+            record["no_escalate"] = True
+            if swarm is not None and req.model not in MODEL_NAMES:
+                record["specialist"] = req.model
+            try:
+                probs, stats = await asyncio.wrap_future(worker.submit(record, low_priority))
+                break
+            except ValueError:
+                if size <= 8:
+                    raise
+                size //= 2
+        updated, info = dict(req.questions), {}
+        for qid, q in big.items():
+            mine = [(keys, p) for (owner, keys), p in zip(owners, probs) if owner == qid]
+            top, pruned = twostage.finalists(twostage.global_scores([k for k, _ in mine], [p for _, p in mine]))
+            updated[qid] = q.model_copy(update={"criteria": {k: q.criteria[k] for k in top}})
+            info[qid] = {"options": len(q.criteria), "candidates": len(top), "pruned_mass": round(pruned, 4)}
+        return req.model_copy(update={"questions": updated}), info, stats["tokens"]
 
     app.post("/v1/systemone")(decide)
     app.post("/v1/decide")(decide)
