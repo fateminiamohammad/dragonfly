@@ -62,6 +62,27 @@ TypeSafe-compatible: the TypeSafe and Kev SDKs work by pointing their base URL a
 | 4xx from a plugin | a plugin rejected the request, e.g. 413 for an oversized state |
 | 500 | a fail-closed plugin errored |
 
+### Risk-controlled answers (`max_error`)
+
+Calibrated confidence says how sure the model is; `max_error` turns it into a promise. Add it to any request
+(0 < max_error < 0.5) on a server with a fitted risk table (`DRAGONFLY_RISK`, made by `scripts/fit_risk.py`):
+
+```json
+{"state": "...", "max_error": 0.05, "questions": {"intent": {"type": "choice", "criteria": {"refund": null, "billing": null, "other": null}}}}
+```
+
+Every answer then gains:
+
+| Field | Meaning |
+|---|---|
+| `decided` | `true`: on held-out data, answers at this confidence were wrong at most `max_error` of the time (95% Clopper-Pearson bound, Bonferroni-corrected over the candidate thresholds). Act on it automatically. |
+| `set` | the smallest set of option keys that contains the right answer with probability ≥ 1 − `max_error` (split conformal prediction), most likely first. One key = sure; several = send just these to a person or an LLM. |
+| `risk` | the target actually used (the largest fitted target ≤ `max_error`: 0.005, 0.01, 0.02, 0.05, 0.1, 0.2), the confidence threshold and the calibration size. |
+
+The promise holds for data like the calibration data; `fit_risk.py` reports the realized error on a test split next
+to each target. A request without `max_error` is unchanged. Answers from a specialist are never `decided` (the table
+was fitted on the general model). Without a table, `max_error` returns 400.
+
 ### Specialists (the swarm)
 
 With `DRAGONFLY_SPECIALISTS` set, `model` selects a specialist by name, or `"auto"` to let the general model route.

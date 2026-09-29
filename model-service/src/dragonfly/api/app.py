@@ -22,6 +22,7 @@ from ..cache import AnswerCache, record_key
 from ..flows import FlowError, mermaid, run_flow
 from ..media import MediaError, MediaResolver, find_media
 from ..plugins import PluginError, PluginHost
+from ..risk import RiskTable
 from ..schema import MODEL_NAMES, DecideRequest, to_answers, to_record
 
 REQUESTS = Counter("dragonfly_requests_total", "Decision requests", ["status"])
@@ -35,7 +36,7 @@ MODEL_LATENCY = Histogram("dragonfly_model_seconds", "Forward-pass time of the b
 
 def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list[str] | None = None,
                keys: KeyStore | None = None, cache: AnswerCache | None = None,
-               media: MediaResolver | None = None, flows=None) -> FastAPI:
+               media: MediaResolver | None = None, flows=None, risk: RiskTable | None = None) -> FastAPI:
     """No keys configured = open server (local default). `media` enables images/audio in the state (perception-service).
     `flows` stores saved flows (an object with `async get(name) -> dict | None`, e.g. flows.RedisFlowStore)."""
     plugins = plugins or PluginHost([])
@@ -109,6 +110,8 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
             answers = to_answers(probs, meta)
             for m, tier in zip(meta, stats["tiers"]):
                 answers[m["id"]]["tier"] = tier
+            if req.max_error is not None:
+                apply_risk(req, answers, probs, meta, stats.get("specialist"))
             body = {
                 "model": req.model,
                 "answers": answers,
@@ -134,6 +137,19 @@ def create_app(worker: Worker, plugins: PluginHost | None = None, api_keys: list
         LATENCY.observe(time.perf_counter() - started)
         background.add_task(keys.record_usage, key_digest, len(meta), stats["tokens"])
         return body
+
+    def apply_risk(req: DecideRequest, answers: dict, probs, meta, specialist: str | None) -> None:
+        if risk is None:
+            raise HTTPException(400, "max_error needs a fitted risk table on this server (DRAGONFLY_RISK, "
+                                     "scripts/fit_risk.py)")
+        for m, p in zip(meta, probs):
+            answer = answers[m["id"]]
+            if specialist not in (None, "general"):
+                # the table was fitted on the general model's answers: promise nothing for a specialist
+                answer.update(decided=False, set=list(m["keys"]),
+                              risk={"max_error": req.max_error, "note": f"no risk table for specialist {specialist}"})
+            else:
+                risk.apply(answer, p, m["keys"], m["type"], req.max_error)
 
     app.post("/v1/systemone")(decide)
     app.post("/v1/decide")(decide)

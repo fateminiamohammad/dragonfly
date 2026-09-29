@@ -49,6 +49,9 @@ class DecideRequest(BaseModel):
     state: JSONContent
     model: str = "dragonfly-latest"
     questions: dict[str, Question] = Field(min_length=1)
+    # Dragonfly extension (docs/API.md#risk-controlled-answers): each answer then says whether it is "decided" at this
+    # error rate, and the smallest option "set" that contains the truth with probability >= 1 - max_error
+    max_error: float | None = Field(default=None, gt=0, lt=0.5)
 
 
 def render(v: JSONContent, indent: int = 0) -> str:

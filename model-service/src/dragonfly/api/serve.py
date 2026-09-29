@@ -17,6 +17,7 @@ Configuration is by environment (see docker/.env.example):
   PERCEPTION_URL           optional: perception-service base URL; enables images and audio in the state
   DRAGONFLY_PLUGINS        comma-separated plugin names to load
   DRAGONFLY_MAX_BATCH      requests per forward pass (default 64)
+  DRAGONFLY_RISK           optional risk table (scripts/fit_risk.py): enables "max_error" in requests
   DRAGONFLY_SPECIALISTS    optional folder of specialists (docs/SWARM.md); requests pick one with "model"
   DRAGONFLY_SWARM_MAX_LOADED   tier S specialists kept in VRAM at once (default 4, least recently used unloaded)
   DRAGONFLY_ROUTE_THRESHOLD    "model": "auto" uses a specialist only above this router confidence (default 0.5)
@@ -41,6 +42,7 @@ from ..engine import Cascade, Engine
 from ..flows import RedisFlowStore
 from ..media import MediaResolver
 from ..plugins import PluginHost
+from ..risk import RiskTable
 from ..swarm import AdapterBank, Swarm, read_card
 from .app import create_app
 
@@ -153,7 +155,8 @@ def build_app():
         cache = AnswerCache(size)
     media = MediaResolver(os.environ["PERCEPTION_URL"]) if os.environ.get("PERCEPTION_URL") else None
     flows = RedisFlowStore(redis) if redis is not None else None
-    return create_app(worker, PluginHost.from_env(), keys=keys, cache=cache, media=media, flows=flows)
+    risk = RiskTable.load(os.environ["DRAGONFLY_RISK"]) if os.environ.get("DRAGONFLY_RISK") else None
+    return create_app(worker, PluginHost.from_env(), keys=keys, cache=cache, media=media, flows=flows, risk=risk)
 
 
 def main() -> None:
