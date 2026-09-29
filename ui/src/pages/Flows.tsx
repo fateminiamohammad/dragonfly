@@ -49,6 +49,35 @@ const EXAMPLE: Flow = {
 };
 const EXAMPLE_STATE = 'I was charged twice for order 5512 and want my money back. Third time I write!';
 
+/** Template: check an LLM's output before it reaches a user (grounded? on policy? right format? no private data?). */
+const LLM_CHECK: Flow = {
+  start: 'check',
+  steps: {
+    check: {
+      questions: {
+        grounded: { type: 'noul', instructions: 'Is every claim in the answer supported by the source text?' },
+        on_policy: { type: 'noul', instructions: 'Does the answer follow the policy (no promises of refunds, no legal or medical advice)?' },
+        format_ok: { type: 'noul', instructions: 'Is the answer a short, polite reply to the customer, without internal notes?' },
+        leaks_data: { type: 'noul', instructions: "Does the answer reveal another customer's personal data?" },
+      },
+      next: [
+        { if: 'leaks_data.noul > 0.5 or grounded.noul < 0.3 or on_policy.noul < 0.3', to: 'block' },
+        { if: 'grounded.confidence < 0.5 or on_policy.confidence < 0.5', to: 'review' },
+      ],
+    },
+    block: { questions: { severity: { type: 'score', instructions: 'How harmful would sending this answer be?', criteria: ['low', 'medium', 'high'] } } },
+    review: { questions: { fixable: { type: 'noul', instructions: 'Could a small edit make the answer acceptable?' } } },
+  },
+};
+const LLM_CHECK_STATE = JSON.stringify(
+  {
+    source: 'Order 5512 was shipped on May 3 and delivered on May 6. Refunds require a return within 30 days.',
+    llm_answer: 'Your order 5512 was delivered on May 6. I have issued a full refund to your card.',
+  },
+  null,
+  2,
+);
+
 /** Same drawing as the model-service's flows.mermaid(), for the editor preview before a run. */
 function toMermaid(flow: Flow, path: string[] = []): string {
   const lines = ['flowchart LR'];
@@ -205,6 +234,16 @@ export function Flows() {
               {busy ? 'Running…' : 'Run flow'}
             </button>
             <button onClick={() => setText(JSON.stringify(EXAMPLE, null, 2))}>Reset example</button>
+            <button
+              onClick={() => {
+                setName('llm-output-check');
+                setText(JSON.stringify(LLM_CHECK, null, 2));
+                setState(LLM_CHECK_STATE);
+                setTrace(null);
+              }}
+            >
+              Template: check an LLM answer
+            </button>
           </div>
           {error && <p className="error">{error}</p>}
           {notice && <p className="notice">{notice}</p>}
