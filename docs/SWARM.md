@@ -174,3 +174,16 @@ The customer asks for a refund.",
   (stored in Redis) and call `POST /v1/flows/<name>/run {"state": ...}`. Add `"mermaid": true` to get the diagram
   with the path taken highlighted. The response has the path, every step's answers, and per-step latency.
 - Each step goes through the same pipeline as `/v1/systemone`: plugins, cache, usage accounting.
+
+### Template: check an LLM's answer
+
+A common flow is guarding an LLM (TypeSafe calls it "LLM verification"). Dragonfly reads the source and the LLM's
+answer once and answers the checks in one pass:
+- grounded in the source?
+- on policy?
+- the right format?
+- leaking someone's data?
+
+It blocks only on confident failures and sends unsure cases to review. Load it on the **Flows** page ("Template:
+check an LLM answer"), or run `examples/verify_llm_output.py` (Python SDK). With `max_error`, "sure" becomes the
+guaranteed `decided`.
