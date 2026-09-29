@@ -205,6 +205,18 @@ Benchmarks here run continuously, so they measure the ramped-up GPU.
   from 365 to 38 ms.
 - Buckets go up to 64 rows, so large escalated batches never fall back to eager.
 
+**Not adopted: INT8 for tier M** (torchao, Qwen3-4B, measured 2026-09-29; `runs/quant-bench.log`):
+
+| Tier M-4B | 3-question request (CUDA graphs) | long request (~800 tokens) | accuracy, 400 decision-v2 questions | peak VRAM |
+|---|---|---|---|---|
+| **bf16, LoRA merged (served)** | **20.9 ms** | **120.6 ms** | 85.4% | 13.5 GB |
+| INT8 weight-only | 39.5 ms | 142.3 ms | 85.2% | 9.9 GB |
+| INT8 weights + activations (W8A8) | 933 ms (eager; CUDA graph capture fails) | 864 ms | 85.4% | 10.8 GB |
+
+Tier M reads whole documents in one pass (prefill), which is compute-bound: weight-only INT8 saves memory bandwidth
+that isn't the bottleneck and adds dequantization work, so it is 1.9× slower. W8A8 has no fast kernels for this
+GPU/torch build. INT8 would only help to fit tier M on a smaller GPU (−3.6 GB).
+
 **Not adopted: ONNX Runtime / TensorRT export for tier S.**
 - CUDA graphs already remove the launch overhead: 8.5 ms model time against about 7 ms of pure GPU work.
 - ONNX Runtime GPU measured slower than the torch path on this machine (OCR: 535 vs 144 ms).
